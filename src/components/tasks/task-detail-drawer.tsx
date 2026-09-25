@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2, Plus, Play, Square, Check } from "lucide-react";
@@ -40,15 +40,11 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
   const queryClient = useQueryClient();
   const [newChecklistItem, setNewChecklistItem] = useState("");
   const [newComment, setNewComment] = useState("");
-  const [description, setDescription] = useState("");
   const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">("idle");
   const descTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const task = data?.task;
   const { data: statusesData } = useProjectStatuses(task?.projectId);
 
-  useEffect(() => {
-    if (task) setDescription(task.description ?? "");
-  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["task", taskId] });
@@ -67,7 +63,6 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
   }
 
   function onDescriptionChange(value: string) {
-    setDescription(value);
     setSavingState("saving");
     if (descTimer.current) clearTimeout(descTimer.current);
     descTimer.current = setTimeout(async () => {
@@ -231,7 +226,7 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
             {savingState === "saving" && <span>در حال ذخیره...</span>}
             {savingState === "saved" && <span className="text-(--color-success)">ذخیره شد</span>}
           </p>
-          <Textarea rows={4} value={description} onChange={(e) => onDescriptionChange(e.target.value)} placeholder="توضیحی برای این وظیفه بنویسید..." />
+          <Textarea key={task.id} rows={4} defaultValue={task.description ?? ""} onChange={(e) => onDescriptionChange(e.target.value)} placeholder="توضیحی برای این وظیفه بنویسید..." />
         </div>
 
         <div className="mt-5">
