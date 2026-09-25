@@ -117,7 +117,8 @@ export async function getActiveWorkspaceId(): Promise<string | null> {
 export async function setActiveWorkspaceCookie(workspaceId: string) {
   const cookieStore = await cookies();
   cookieStore.set(WORKSPACE_COOKIE, workspaceId, {
-    httpOnly: false,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
