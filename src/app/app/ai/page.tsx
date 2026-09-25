@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -30,6 +30,8 @@ export default function SamuraiAiPage() {
   const [streaming, setStreaming] = useState(false);
   const [notConfigured, setNotConfigured] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const localIdPrefix = useId();
+  const messageSequence = useRef(0);
 
   const { data: conversations } = useQuery({
     queryKey: ["ai-conversations"],
@@ -65,8 +67,9 @@ export default function SamuraiAiPage() {
     if (!content || streaming) return;
     setInput("");
     setNotConfigured(false);
-    const userMsg: ChatMessage = { id: `local-${Date.now()}`, role: "user", content };
-    const assistantMsg: ChatMessage = { id: `local-a-${Date.now()}`, role: "assistant", content: "" };
+    const sequence = ++messageSequence.current;
+    const userMsg: ChatMessage = { id: `${localIdPrefix}-${sequence}-u`, role: "user", content };
+    const assistantMsg: ChatMessage = { id: `${localIdPrefix}-${sequence}-a`, role: "assistant", content: "" };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
 
