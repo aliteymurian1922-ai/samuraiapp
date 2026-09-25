@@ -124,7 +124,7 @@ function TaskCard({ task, onClick, dragging }: { task: TaskRow; onClick?: () => 
       </div>
       <div className="mt-2.5 flex items-center justify-between">
         {task.dueDate ? (
-          <Badge variant={new Date(task.dueDate).getTime() < Date.now() ? "danger" : "outline"}>{formatJalaliDate(task.dueDate)}</Badge>
+          <Badge variant={new Date(task.dueDate).getTime() < new Date().getTime() ? "danger" : "outline"}>{formatJalaliDate(task.dueDate)}</Badge>
         ) : <span />}
         {task.assigneeName && <Avatar name={task.assigneeName} color={task.assigneeColor} size={22} />}
       </div>
