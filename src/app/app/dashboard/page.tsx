@@ -40,7 +40,7 @@ export default async function DashboardPage() {
   ]);
 
   const myOpenTasks = myTasks.filter((t) => !t.statusIsDone);
-  const myOverdue = myOpenTasks.filter((t) => t.dueDate && new Date(t.dueDate).getTime() < Date.now());
+  const myOverdue = myOpenTasks.filter((t) => t.dueDate && new Date(t.dueDate).getTime() < new Date().getTime());
   const criticalProjects = health.filter((h) => h.health.level === "critical");
   const atRiskProjects = health.filter((h) => h.health.level === "at_risk");
   const overloaded = workload.filter((w) => w.level === "overloaded");
