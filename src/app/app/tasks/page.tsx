@@ -103,7 +103,7 @@ function TasksPageInner() {
       ) : (
         <div className="space-y-2">
           {tasks.map((t) => {
-            const overdue = t.dueDate && !t.statusIsDone && new Date(t.dueDate).getTime() < Date.now();
+            const overdue = t.dueDate && !t.statusIsDone && new Date(t.dueDate).getTime() < new Date().getTime();
             return (
               <div key={t.id} className="flex items-center gap-3 rounded-xl border border-(--color-border) bg-white p-3">
                 <Checkbox checked={t.statusIsDone} onCheckedChange={(v) => toggleComplete(t.id, Boolean(v))} />
