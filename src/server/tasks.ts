@@ -547,3 +547,40 @@ export async function bulkUpdateTasks(workspaceId: string, input: BulkTaskAction
 
   return { updatedIds: input.taskIds, completed: input.action === "complete" };
 }
+
+
+export async function getBlockedTasks(workspaceId: string, limit = 8) {
+  const result = await db.execute(sql<{
+    id: string;
+    title: string;
+    projectId: string;
+    projectName: string;
+    assigneeId: string | null;
+    blockerCount: number;
+  }>`
+    select
+      t.id,
+      t.title,
+      t.project_id as "projectId",
+      p.name as "projectName",
+      t.assignee_id as "assigneeId",
+      count(td.id)::int as "blockerCount"
+    from task_dependencies td
+    inner join tasks t on t.id = td.task_id
+    inner join tasks blocker on blocker.id = td.depends_on_task_id
+    inner join task_statuses blocker_status on blocker_status.id = blocker.status_id
+    inner join task_statuses task_status on task_status.id = t.status_id
+    inner join projects p on p.id = t.project_id
+    where t.workspace_id = ${workspaceId}
+      and td.type = 'blocked_by'
+      and blocker_status.is_done = false
+      and task_status.is_done = false
+      and t.deleted_at is null
+      and blocker.deleted_at is null
+    group by t.id, t.title, t.project_id, p.name, t.assignee_id
+    order by count(td.id) desc, t.updated_at asc
+    limit ${limit}
+  `);
+
+  return result.rows;
+}
