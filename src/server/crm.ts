@@ -22,8 +22,10 @@ import type {
   UpdateCrmActivityInput,
   UpdateDealInput,
   UpdateLeadInput,
+  ConvertDealToProjectInput,
 } from "@/lib/validation/crm";
-import { NotFoundError } from "@/lib/api-response";
+import { ApiError, NotFoundError } from "@/lib/api-response";
+import { createProject } from "@/server/projects";
 
 const DEFAULT_STAGES = [
   { name: "سرنخ جدید", color: "#94a3b8", probability: 10, position: 0 },
@@ -99,6 +101,7 @@ export async function listDeals(workspaceId: string, pipelineId?: string) {
       source: crmDeals.source,
       expectedCloseAt: crmDeals.expectedCloseAt,
       lostReason: crmDeals.lostReason,
+      projectId: crmDeals.projectId,
       createdAt: crmDeals.createdAt,
       companyName: crmCompanies.name,
       contactName: crmContacts.name,
@@ -585,4 +588,72 @@ export async function createCrmProduct(workspaceId: string, input: CreateCrmProd
     })
     .returning();
   return product;
+}
+
+
+export async function convertDealToProject(
+  workspaceId: string,
+  userId: string,
+  dealId: string,
+  input: ConvertDealToProjectInput,
+) {
+  const rows = await db
+    .select({
+      id: crmDeals.id,
+      title: crmDeals.title,
+      status: crmDeals.status,
+      value: crmDeals.value,
+      ownerId: crmDeals.ownerId,
+      projectId: crmDeals.projectId,
+      companyName: crmCompanies.name,
+      contactName: crmContacts.name,
+    })
+    .from(crmDeals)
+    .leftJoin(crmCompanies, eq(crmCompanies.id, crmDeals.companyId))
+    .leftJoin(crmContacts, eq(crmContacts.id, crmDeals.contactId))
+    .where(and(eq(crmDeals.id, dealId), eq(crmDeals.workspaceId, workspaceId)))
+    .limit(1);
+
+  const deal = rows[0];
+  if (!deal) throw new NotFoundError("فرصت فروش یافت نشد.");
+  if (deal.status !== "won") {
+    throw new ApiError("فقط فروش برنده‌شده را می‌توان به پروژه اجرایی تبدیل کرد.", 409);
+  }
+  if (deal.projectId) {
+    throw new ApiError("برای این فروش قبلاً پروژه اجرایی ساخته شده است.", 409);
+  }
+
+  const customerName = deal.companyName || deal.contactName || "مشتری";
+  const memberIds = Array.from(
+    new Set([...(input.memberIds ?? []), ...(deal.ownerId ? [deal.ownerId] : [])]),
+  );
+
+  const project = await createProject(workspaceId, userId, {
+    name: input.name || deal.title,
+    description:
+      input.description ||
+      `پروژه ایجادشده از فروش «${deal.title}» برای ${customerName}. مبلغ فروش: ${Number(deal.value ?? 0).toLocaleString("fa-IR")} تومان.`,
+    priority: input.priority,
+    color: input.color,
+    startDate: new Date().toISOString(),
+    dueDate: input.dueDate ?? null,
+    memberIds,
+  });
+
+  await db
+    .update(crmDeals)
+    .set({ projectId: project.id, updatedAt: new Date() })
+    .where(and(eq(crmDeals.id, deal.id), eq(crmDeals.workspaceId, workspaceId)));
+
+  await db.insert(crmActivities).values({
+    workspaceId,
+    dealId: deal.id,
+    type: "note",
+    title: "تبدیل فروش به پروژه اجرایی",
+    note: `پروژه «${project.name}» از این فروش ساخته شد.`,
+    createdBy: userId,
+    completedAt: new Date(),
+  });
+
+  return project;
 }
