@@ -257,6 +257,21 @@ export const crmPipelineStages = pgTable("crm_pipeline_stages", {
   uniqueIndex("crm_pipeline_stages_position_idx").on(t.pipelineId, t.position),
 ]);
 
+export const crmSalesTargets = pgTable("crm_sales_targets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  ownerKey: varchar("owner_key", { length: 80 }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+  targetValue: bigint("target_value", { mode: "number" }).notNull().default(0),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("crm_sales_targets_workspace_period_owner_idx").on(t.workspaceId, t.periodStart, t.ownerKey),
+  index("crm_sales_targets_user_idx").on(t.userId, t.periodStart),
+]);
+
 export const crmDeals = pgTable("crm_deals", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),

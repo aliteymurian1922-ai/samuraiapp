@@ -31,6 +31,7 @@ export async function apiFetch<T = unknown>(url: string, init?: RequestInit): Pr
 export const api = {
   get: <T>(url: string) => apiFetch<T>(url, { method: "GET" }),
   post: <T>(url: string, body?: unknown) => apiFetch<T>(url, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(url: string, body?: unknown) => apiFetch<T>(url, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(url: string, body?: unknown) => apiFetch<T>(url, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(url: string) => apiFetch<T>(url, { method: "DELETE" }),
 };
