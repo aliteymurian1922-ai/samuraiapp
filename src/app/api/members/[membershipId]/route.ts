@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ me
     if (!target || target.workspaceId !== workspace.id) throw new NotFoundError("عضو یافت نشد.");
     const input = updateMemberSchema.parse(await req.json());
 
-    if (target.role === "owner" && input.role !== undefined && input.role !== "owner") {
+    if (target.role === "owner" && input.role !== undefined) {
       throw new ApiError("نقش مالک Workspace قابل تغییر نیست.", 400);
     }
 
