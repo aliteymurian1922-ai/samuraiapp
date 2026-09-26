@@ -300,6 +300,7 @@ export function CrmWorkspace() {
         onOpenChange={setDealOpen}
         overview={overview.data}
         customers={customers.data?.customers ?? []}
+        products={products.data?.products ?? []}
         members={memberData?.members ?? []}
         onCreated={invalidateCrm}
       />
@@ -781,6 +782,7 @@ function DealDialog({
   onOpenChange,
   overview,
   customers,
+  products,
   members,
   onCreated,
 }: {
@@ -788,6 +790,7 @@ function DealDialog({
   onOpenChange: (open: boolean) => void;
   overview?: Overview;
   customers: Customer[];
+  products: Product[];
   members: { userId: string; name: string }[];
   onCreated: () => Promise<void>;
 }) {
@@ -804,7 +807,7 @@ function DealDialog({
 
     try {
       setSubmitting(true);
-      await api.post("/api/crm/deals", {
+      const result = await api.post<{ deal: Deal }>("/api/crm/deals", {
         title: String(form.get("title") || ""),
         value: Number(form.get("value") || 0),
         contactId: customer?.id ?? null,
@@ -814,6 +817,19 @@ function DealDialog({
         source: String(form.get("source") || "") || null,
         expectedCloseAt: date ? new Date(date).toISOString() : null,
       });
+
+      const productId = String(form.get("productId") || "");
+      if (productId) {
+        const product = products.find((item) => item.id === productId);
+        await api.put(`/api/crm/deals/${result.deal.id}/products`, {
+          items: [{
+            productId,
+            quantity: Math.max(1, Number(form.get("quantity") || 1)),
+            unitPrice: product?.unitPrice ?? 0,
+          }],
+        });
+      }
+
       await onCreated();
       toast.success("فرصت فروش ایجاد شد.");
       onOpenChange(false);
@@ -854,6 +870,19 @@ function DealDialog({
                 {members.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
               </NativeSelect>
             </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="محصول / خدمت">
+              <NativeSelect name="productId" defaultValue="">
+                <option value="">بدون محصول مشخص</option>
+                {products.filter((product) => product.isActive).map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} · {moneyFa.format(product.unitPrice)} تومان
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="تعداد"><Input name="quantity" type="number" min="1" defaultValue="1" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="منبع"><Input name="source" placeholder="سایت، معرفی، تبلیغات..." /></Field>
