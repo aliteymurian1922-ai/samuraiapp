@@ -12,7 +12,7 @@ import {
   crmPipelineStages,
   users,
 } from "@/db/schema";
-import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type {
   CreateCrmActivityInput,
   CreateCrmProductInput,
