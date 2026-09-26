@@ -33,5 +33,7 @@ export const updateAutomationRuleSchema = z.object({
   actionConfig: z.record(z.string(), z.unknown()).optional(),
 });
 
+export type AutomationTrigger = (typeof automationTriggerValues)[number];
+export type AutomationAction = (typeof automationActionValues)[number];
 export type CreateAutomationRuleInput = z.infer<typeof createAutomationRuleSchema>;
 export type UpdateAutomationRuleInput = z.infer<typeof updateAutomationRuleSchema>;
