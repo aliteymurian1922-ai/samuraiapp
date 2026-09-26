@@ -52,7 +52,7 @@ async function assertEntityExists(
   if (!rows[0]) throw new NotFoundError("فرصت فروش یافت نشد.");
 }
 
-function normalizeValue(
+export function normalizeCrmCustomFieldValue(
   field: typeof crmCustomFields.$inferSelect,
   value: CustomValue,
 ): CustomValue {
@@ -255,7 +255,7 @@ export async function setCrmCustomFieldValues(
 
     for (const [fieldId, rawValue] of Object.entries(input.values)) {
       const field = fieldMap.get(fieldId)!;
-      const value = normalizeValue(field, rawValue);
+      const value = normalizeCrmCustomFieldValue(field, rawValue);
 
       if (value === null) {
         await tx
