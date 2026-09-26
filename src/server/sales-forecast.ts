@@ -267,15 +267,32 @@ export async function buildSalesForecast(workspaceId: string) {
       .map((member) => [member.ownerId as string, member]),
   );
 
-  const team = targets.members.map((member) => {
+  const team: Array<{
+    ownerId: string | null;
+    ownerName: string;
+    openDeals: number;
+    openValue: number;
+    weightedValue: number;
+    weightedDueThisMonth: number;
+    wonValueThisMonth: number;
+    wonCountThisMonth: number;
+    lostCountThisMonth: number;
+    winRateThisMonth: number;
+    targetValue: number;
+    attainmentPercent: number;
+    forecastValue: number;
+    forecastAttainmentPercent: number;
+    gapToTarget: number;
+  }> = targets.members.map((member) => {
     const sales = teamRowMap.get(member.userId);
     const wonCountThisMonth = sales?.wonCountThisMonth ?? 0;
     const lostCountThisMonth = sales?.lostCountThisMonth ?? 0;
     const decided = wonCountThisMonth + lostCountThisMonth;
     const wonValueThisMonth = Number(sales?.wonValueThisMonth ?? 0);
     const weightedValue = Number(sales?.weightedValue ?? 0);
+    const weightedDueThisMonth = Number(sales?.weightedDueThisMonth ?? 0);
     const targetValue = Number(member.targetValue ?? 0);
-    const forecastValue = wonValueThisMonth + weightedValue;
+    const forecastValue = wonValueThisMonth + weightedDueThisMonth;
 
     return {
       ownerId: member.userId,
@@ -283,6 +300,7 @@ export async function buildSalesForecast(workspaceId: string) {
       openDeals: sales?.openDeals ?? 0,
       openValue: Number(sales?.openValue ?? 0),
       weightedValue,
+      weightedDueThisMonth,
       wonValueThisMonth,
       wonCountThisMonth,
       lostCountThisMonth,
@@ -306,13 +324,14 @@ export async function buildSalesForecast(workspaceId: string) {
       openDeals: unassigned.openDeals ?? 0,
       openValue: Number(unassigned.openValue ?? 0),
       weightedValue: Number(unassigned.weightedValue ?? 0),
+      weightedDueThisMonth: Number(unassigned.weightedDueThisMonth ?? 0),
       wonValueThisMonth: Number(unassigned.wonValueThisMonth ?? 0),
       wonCountThisMonth,
       lostCountThisMonth,
       winRateThisMonth: decided ? Math.round((wonCountThisMonth / decided) * 100) : 0,
       targetValue: 0,
       attainmentPercent: 0,
-      forecastValue: Number(unassigned.wonValueThisMonth ?? 0) + Number(unassigned.weightedValue ?? 0),
+      forecastValue: Number(unassigned.wonValueThisMonth ?? 0) + Number(unassigned.weightedDueThisMonth ?? 0),
       forecastAttainmentPercent: 0,
       gapToTarget: 0,
     });
