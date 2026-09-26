@@ -549,15 +549,17 @@ export async function bulkUpdateTasks(workspaceId: string, input: BulkTaskAction
 }
 
 
-export async function getBlockedTasks(workspaceId: string, limit = 8) {
-  const result = await db.execute(sql<{
-    id: string;
-    title: string;
-    projectId: string;
-    projectName: string;
-    assigneeId: string | null;
-    blockerCount: number;
-  }>`
+export type BlockedTaskRow = {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  assigneeId: string | null;
+  blockerCount: number;
+};
+
+export async function getBlockedTasks(workspaceId: string, limit = 8): Promise<BlockedTaskRow[]> {
+  const result = await db.execute(sql`
     select
       t.id,
       t.title,
@@ -582,5 +584,12 @@ export async function getBlockedTasks(workspaceId: string, limit = 8) {
     limit ${limit}
   `);
 
-  return result.rows;
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    title: String(row.title),
+    projectId: String(row.projectId),
+    projectName: String(row.projectName),
+    assigneeId: row.assigneeId ? String(row.assigneeId) : null,
+    blockerCount: Number(row.blockerCount),
+  }));
 }
