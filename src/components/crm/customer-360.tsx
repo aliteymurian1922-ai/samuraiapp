@@ -439,7 +439,7 @@ function TimelineGroup({
   onToggle: (id: string) => void;
   completed?: boolean;
 }) {
-  const now = Date.now();
+  const now = new Date().getTime();
 
   return (
     <div>
