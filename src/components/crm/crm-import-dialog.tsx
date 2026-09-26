@@ -202,7 +202,7 @@ export function CrmImportDialog({
   const [preview, setPreview] = useState<ImportResult | null>(null);
   const [pending, setPending] = useState(false);
 
-  const customFields = fields.data?.fields ?? [];
+  const customFields = useMemo(() => fields.data?.fields ?? [], [fields.data?.fields]);
 
   const targetOptions = useMemo(
     () => [
