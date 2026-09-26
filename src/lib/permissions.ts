@@ -12,6 +12,7 @@ export type Capability =
   | "crm.delete"
   | "crm.fields.manage"
   | "crm.import"
+  | "crm.targets.manage"
   | "automation.view"
   | "automation.manage"
   | "project.create"
@@ -52,6 +53,7 @@ const CAPABILITY_MIN_ROLE: Record<Capability, number> = {
   "crm.delete": ROLE_RANK.manager,
   "crm.fields.manage": ROLE_RANK.manager,
   "crm.import": ROLE_RANK.manager,
+  "crm.targets.manage": ROLE_RANK.manager,
   "automation.view": ROLE_RANK.viewer,
   "automation.manage": ROLE_RANK.manager,
   "project.create": ROLE_RANK.manager,
