@@ -15,9 +15,9 @@ function getPool() {
 
   if (localPool) return localPool;
 
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required at runtime");
+    throw new Error("DATABASE_URL or POSTGRES_URL is required at runtime");
   }
 
   localPool = new Pool({ connectionString: databaseUrl });
