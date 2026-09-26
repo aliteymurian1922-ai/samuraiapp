@@ -4,10 +4,13 @@ import { getOverdueTasks, listTasks } from "@/server/tasks";
 import { listActivity } from "@/server/activity";
 import { getUpcomingMeetings } from "@/server/meetings";
 import { ok, handleApiError } from "@/lib/api-response";
+import { syncTaskRemindersForUser } from "@/server/task-reminders";
 
 export async function GET() {
   try {
     const { workspace, user } = await requireWorkspaceContext();
+
+    await syncTaskRemindersForUser(workspace.id, user.id);
 
     const [snapshot, health, workload, trend, overdue, myTasks, activity, meetings] = await Promise.all([
       getDashboardSnapshot(workspace.id),
