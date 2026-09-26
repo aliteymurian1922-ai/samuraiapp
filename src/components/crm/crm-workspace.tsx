@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
 import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
+import { CrmImportDialog } from "@/components/crm/crm-import-dialog";
 import {
   CrmCustomFieldsFormSection,
   CrmCustomFieldsView,
@@ -128,6 +129,7 @@ export function CrmWorkspace() {
   const [leadOpen, setLeadOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [dealOpen, setDealOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const overview = useQuery({
     queryKey: ["crm", "overview"],
@@ -213,6 +215,7 @@ export function CrmWorkspace() {
           <p className="mt-1 text-xs text-(--color-muted)">مشتری‌ها، پیگیری‌ها و فرصت‌های فروش را در یک مسیر شفاف نگه دارید.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setImportOpen(true)}>Import CSV</Button>
           <Button variant="secondary" onClick={() => setCustomerOpen(true)}>مشتری جدید</Button>
           <Button variant="secondary" onClick={() => setLeadOpen(true)}>سرنخ جدید</Button>
           <Button onClick={() => setDealOpen(true)}>فرصت فروش جدید</Button>
@@ -277,6 +280,8 @@ export function CrmWorkspace() {
       {tab === "activities" && <CrmActivitiesView />}
       {tab === "products" && <CrmProductsView />}
       {tab === "customFields" && <CrmCustomFieldsView />}
+
+      <CrmImportDialog open={importOpen} onOpenChange={setImportOpen} />
 
       <LeadDialog
         open={leadOpen}
