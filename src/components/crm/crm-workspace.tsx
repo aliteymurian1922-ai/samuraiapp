@@ -14,7 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
-import { CrmActivitiesView } from "@/components/crm/crm-activities-view";\nimport { CrmPriorityView } from "@/components/crm/crm-priority-view";
+import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
+import { CrmPriorityView } from "@/components/crm/crm-priority-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
 import { CrmImportDialog } from "@/components/crm/crm-import-dialog";
 import {
@@ -248,6 +249,7 @@ export function CrmWorkspace() {
       )}
 
       <div className="flex w-fit gap-1 rounded-xl border border-(--color-border) bg-white p-1">
+        <TabButton active={tab === "priority"} onClick={() => setTab("priority")}>اولویت امروز</TabButton>
         <TabButton active={tab === "pipeline"} onClick={() => setTab("pipeline")}>Pipeline فروش</TabButton>
         <TabButton active={tab === "leads"} onClick={() => setTab("leads")}>سرنخ‌ها</TabButton>
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
@@ -256,7 +258,9 @@ export function CrmWorkspace() {
         <TabButton active={tab === "customFields"} onClick={() => setTab("customFields")}>فیلدهای سفارشی</TabButton>
       </div>
 
-      {tab === "priority" && <CrmPriorityView />}\n\n      {tab === "pipeline" && (
+      {tab === "priority" && <CrmPriorityView />}
+
+      {tab === "pipeline" && (
         <PipelineView
           overview={overview.data}
           isLoading={overview.isLoading}
