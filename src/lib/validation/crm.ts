@@ -35,6 +35,17 @@ export const createCustomerSchema = z.object({
 });
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
+export const updateCustomerSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  jobTitle: optionalText(120),
+  phone: optionalText(50),
+  email: z.string().trim().email("ایمیل معتبر نیست.").max(255).optional().nullable().or(z.literal("")),
+  source: optionalText(80),
+  ownerId: z.string().uuid().optional().nullable(),
+  notes: optionalText(4000),
+});
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
 export const createDealSchema = z.object({
   title: z.string().trim().min(2, "عنوان فرصت را وارد کنید.").max(200),
   value: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),

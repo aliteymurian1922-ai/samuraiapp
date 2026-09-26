@@ -577,6 +577,13 @@ function CustomersView({
             {customer.ownerName && <p>مسئول: {customer.ownerName}</p>}
             {customer.source && <p>منبع آشنایی: {customer.source}</p>}
           </div>
+
+          <Link
+            href={`/app/crm/customers/${customer.id}`}
+            className="mt-4 flex h-9 items-center justify-center rounded-xl border border-(--color-border) bg-slate-50 text-xs font-semibold text-(--color-primary) transition hover:bg-(--color-primary-soft)"
+          >
+            مشاهده پرونده مشتری
+          </Link>
         </Card>
       ))}
     </div>
