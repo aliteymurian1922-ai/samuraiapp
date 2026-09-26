@@ -319,6 +319,74 @@ export const crmActivities = pgTable("crm_activities", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Project Templates
+// ---------------------------------------------------------------------------
+export const projectTemplates = pgTable("project_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }).notNull().default("#4f46e5"),
+  defaultPriority: priorityEnum("default_priority").notNull().default("medium"),
+  defaultDurationDays: integer("default_duration_days"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("project_templates_workspace_idx").on(t.workspaceId, t.isActive),
+]);
+
+export const projectTemplateTasks = pgTable("project_template_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id").notNull().references(() => projectTemplates.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 220 }).notNull(),
+  description: text("description"),
+  priority: priorityEnum("priority").notNull().default("medium"),
+  dueOffsetDays: integer("due_offset_days"),
+  estimatedMinutes: integer("estimated_minutes"),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("project_template_tasks_template_idx").on(t.templateId, t.position),
+]);
+
+// ---------------------------------------------------------------------------
+// Automations
+// ---------------------------------------------------------------------------
+export const automationRules = pgTable("automation_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  triggerType: varchar("trigger_type", { length: 80 }).notNull(),
+  actionType: varchar("action_type", { length: 80 }).notNull(),
+  config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("automation_rules_workspace_idx").on(t.workspaceId),
+  index("automation_rules_workspace_trigger_idx").on(t.workspaceId, t.triggerType, t.isActive),
+]);
+
+export const automationRuns = pgTable("automation_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  ruleId: uuid("rule_id").references(() => automationRules.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 30 }).notNull(),
+  sourceEntityType: varchar("source_entity_type", { length: 40 }),
+  sourceEntityId: uuid("source_entity_id"),
+  result: jsonb("result").$type<Record<string, unknown>>().notNull().default({}),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("automation_runs_workspace_idx").on(t.workspaceId, t.createdAt),
+  index("automation_runs_rule_idx").on(t.ruleId, t.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 export const projects = pgTable("projects", {

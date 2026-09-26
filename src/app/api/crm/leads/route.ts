@@ -5,6 +5,7 @@ import { ok, handleApiError } from "@/lib/api-response";
 import { createLeadSchema } from "@/lib/validation/crm";
 import { createLead, listLeads } from "@/server/crm";
 import { logActivity } from "@/server/activity";
+import { runCrmAutomations } from "@/server/automations";
 
 export async function GET() {
   try {
@@ -31,6 +32,14 @@ export async function POST(req: NextRequest) {
       entityType: "crm_lead",
       entityId: lead.id,
       message: `${user.name} سرنخ «${lead.name}» را ثبت کرد.`,
+    });
+
+    await runCrmAutomations({
+      workspaceId: workspace.id,
+      actorId: user.id,
+      trigger: "lead_created",
+      entityType: "crm_lead",
+      entityId: lead.id,
     });
 
     return ok({ lead }, 201);
