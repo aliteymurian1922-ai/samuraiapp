@@ -259,6 +259,7 @@ export const crmDeals = pgTable("crm_deals", {
   wonAt: timestamp("won_at", { withTimezone: true }),
   lostAt: timestamp("lost_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  projectId: uuid("project_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -267,6 +268,32 @@ export const crmDeals = pgTable("crm_deals", {
   index("crm_deals_owner_idx").on(t.ownerId),
   index("crm_deals_company_idx").on(t.companyId),
   index("crm_deals_contact_idx").on(t.contactId),
+  index("crm_deals_project_idx").on(t.projectId),
+]);
+
+export const crmProducts = pgTable("crm_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 180 }).notNull(),
+  sku: varchar("sku", { length: 80 }),
+  unitPrice: bigint("unit_price", { mode: "number" }).notNull().default(0),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_products_workspace_idx").on(t.workspaceId),
+  uniqueIndex("crm_products_workspace_sku_idx").on(t.workspaceId, t.sku),
+]);
+
+export const crmDealProducts = pgTable("crm_deal_products", {
+  dealId: uuid("deal_id").notNull().references(() => crmDeals.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => crmProducts.id, { onDelete: "restrict" }),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: bigint("unit_price", { mode: "number" }).notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.dealId, t.productId] }),
+  index("crm_deal_products_product_idx").on(t.productId),
 ]);
 
 export const crmActivities = pgTable("crm_activities", {
@@ -615,6 +642,16 @@ export const crmPipelineStagesRelations = relations(crmPipelineStages, ({ one, m
   deals: many(crmDeals),
 }));
 
+export const crmProductsRelations = relations(crmProducts, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [crmProducts.workspaceId], references: [workspaces.id] }),
+  dealProducts: many(crmDealProducts),
+}));
+
+export const crmDealProductsRelations = relations(crmDealProducts, ({ one }) => ({
+  deal: one(crmDeals, { fields: [crmDealProducts.dealId], references: [crmDeals.id] }),
+  product: one(crmProducts, { fields: [crmDealProducts.productId], references: [crmProducts.id] }),
+}));
+
 export const crmDealsRelations = relations(crmDeals, ({ one, many }) => ({
   workspace: one(workspaces, { fields: [crmDeals.workspaceId], references: [workspaces.id] }),
   pipeline: one(crmPipelines, { fields: [crmDeals.pipelineId], references: [crmPipelines.id] }),
@@ -622,7 +659,9 @@ export const crmDealsRelations = relations(crmDeals, ({ one, many }) => ({
   company: one(crmCompanies, { fields: [crmDeals.companyId], references: [crmCompanies.id] }),
   contact: one(crmContacts, { fields: [crmDeals.contactId], references: [crmContacts.id] }),
   owner: one(users, { fields: [crmDeals.ownerId], references: [users.id] }),
+  project: one(projects, { fields: [crmDeals.projectId], references: [projects.id] }),
   activities: many(crmActivities),
+  products: many(crmDealProducts),
 }));
 
 export const projectsRelations = relations(projects, ({ many, one }) => ({

@@ -5,20 +5,27 @@ import {
   crmCompanies,
   crmContacts,
   crmDeals,
+  crmDealProducts,
   crmLeads,
   crmPipelines,
+  crmProducts,
   crmPipelineStages,
   users,
 } from "@/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type {
+  CreateCrmActivityInput,
+  CreateCrmProductInput,
   CreateCustomerInput,
   CreateDealInput,
   CreateLeadInput,
+  UpdateCrmActivityInput,
   UpdateDealInput,
   UpdateLeadInput,
+  ConvertDealToProjectInput,
 } from "@/lib/validation/crm";
-import { NotFoundError } from "@/lib/api-response";
+import { ApiError, NotFoundError } from "@/lib/api-response";
+import { createProject } from "@/server/projects";
 
 const DEFAULT_STAGES = [
   { name: "سرنخ جدید", color: "#94a3b8", probability: 10, position: 0 },
@@ -94,6 +101,7 @@ export async function listDeals(workspaceId: string, pipelineId?: string) {
       source: crmDeals.source,
       expectedCloseAt: crmDeals.expectedCloseAt,
       lostReason: crmDeals.lostReason,
+      projectId: crmDeals.projectId,
       createdAt: crmDeals.createdAt,
       companyName: crmCompanies.name,
       contactName: crmContacts.name,
@@ -109,7 +117,7 @@ export async function listDeals(workspaceId: string, pipelineId?: string) {
 
 export async function getCrmOverview(workspaceId: string) {
   const pipeline = await ensureDefaultPipeline(workspaceId);
-  const [stages, deals, leadStats, customerStats] = await Promise.all([
+  const [stages, deals, leadStats, customerStats, followUpStats] = await Promise.all([
     getPipelineStages(workspaceId, pipeline.id),
     listDeals(workspaceId, pipeline.id),
     db
@@ -123,12 +131,25 @@ export async function getCrmOverview(workspaceId: string) {
       .select({ total: sql<number>`count(*)::int` })
       .from(crmContacts)
       .where(eq(crmContacts.workspaceId, workspaceId)),
+    db
+      .select({
+        overdue: sql<number>`count(*) filter (where ${crmActivities.completedAt} is null and ${crmActivities.dueAt} < now())::int`,
+        today: sql<number>`count(*) filter (where ${crmActivities.completedAt} is null and ${crmActivities.dueAt} >= date_trunc('day', now()) and ${crmActivities.dueAt} < date_trunc('day', now()) + interval '1 day')::int`,
+      })
+      .from(crmActivities)
+      .where(eq(crmActivities.workspaceId, workspaceId)),
   ]);
 
   const openDeals = deals.filter((deal) => deal.status === "open");
   const wonDeals = deals.filter((deal) => deal.status === "won");
   const lostDeals = deals.filter((deal) => deal.status === "lost");
   const closed = wonDeals.length + lostDeals.length;
+  const stageMap = new Map(stages.map((stage) => [stage.id, stage]));
+
+  const weightedPipelineValue = openDeals.reduce((sum, deal) => {
+    const probability = stageMap.get(deal.stageId)?.probability ?? 0;
+    return sum + Math.round((Number(deal.value ?? 0) * probability) / 100);
+  }, 0);
 
   return {
     pipeline,
@@ -142,8 +163,12 @@ export async function getCrmOverview(workspaceId: string) {
       activeLeads: leadStats[0]?.active ?? 0,
       openDeals: openDeals.length,
       openValue: openDeals.reduce((sum, deal) => sum + Number(deal.value ?? 0), 0),
+      weightedPipelineValue,
       wonDeals: wonDeals.length,
+      wonValue: wonDeals.reduce((sum, deal) => sum + Number(deal.value ?? 0), 0),
       conversionRate: closed > 0 ? Math.round((wonDeals.length / closed) * 100) : 0,
+      overdueFollowUps: followUpStats[0]?.overdue ?? 0,
+      dueTodayFollowUps: followUpStats[0]?.today ?? 0,
     },
   };
 }
@@ -315,27 +340,52 @@ export async function createDeal(workspaceId: string, userId: string, input: Cre
   const stage = await getStageForDeal(workspaceId, pipeline.id, input.stageId);
   const status = stage.isWon ? "won" : stage.isLost ? "lost" : "open";
 
-  const [deal] = await db
-    .insert(crmDeals)
-    .values({
-      workspaceId,
-      pipelineId: pipeline.id,
-      stageId: stage.id,
-      companyId: input.companyId ?? null,
-      contactId: input.contactId ?? null,
-      title: input.title,
-      value: input.value,
-      status,
-      ownerId: input.ownerId ?? userId,
-      source: input.source || null,
-      expectedCloseAt: input.expectedCloseAt ? new Date(input.expectedCloseAt) : null,
-      wonAt: status === "won" ? new Date() : null,
-      lostAt: status === "lost" ? new Date() : null,
-      createdBy: userId,
-    })
-    .returning();
+  return db.transaction(async (tx) => {
+    let dealValue = input.value;
+    let product: typeof crmProducts.$inferSelect | null = null;
 
-  return deal;
+    if (input.productId) {
+      const rows = await tx
+        .select()
+        .from(crmProducts)
+        .where(and(eq(crmProducts.id, input.productId), eq(crmProducts.workspaceId, workspaceId), eq(crmProducts.isActive, true)))
+        .limit(1);
+      product = rows[0] ?? null;
+      if (!product) throw new NotFoundError("محصول یا خدمت انتخاب‌شده یافت نشد.");
+      if (dealValue === 0) dealValue = product.unitPrice * input.quantity;
+    }
+
+    const [deal] = await tx
+      .insert(crmDeals)
+      .values({
+        workspaceId,
+        pipelineId: pipeline.id,
+        stageId: stage.id,
+        companyId: input.companyId ?? null,
+        contactId: input.contactId ?? null,
+        title: input.title,
+        value: dealValue,
+        status,
+        ownerId: input.ownerId ?? userId,
+        source: input.source || null,
+        expectedCloseAt: input.expectedCloseAt ? new Date(input.expectedCloseAt) : null,
+        wonAt: status === "won" ? new Date() : null,
+        lostAt: status === "lost" ? new Date() : null,
+        createdBy: userId,
+      })
+      .returning();
+
+    if (product) {
+      await tx.insert(crmDealProducts).values({
+        dealId: deal.id,
+        productId: product.id,
+        quantity: input.quantity,
+        unitPrice: product.unitPrice,
+      });
+    }
+
+    return deal;
+  });
 }
 
 export async function updateDeal(workspaceId: string, dealId: string, input: UpdateDealInput) {
@@ -455,4 +505,155 @@ export async function convertLeadToDeal(workspaceId: string, userId: string, lea
 
     return { deal, contact, companyId };
   });
+}
+
+
+export async function listCrmActivities(workspaceId: string) {
+  return db
+    .select({
+      id: crmActivities.id,
+      type: crmActivities.type,
+      title: crmActivities.title,
+      note: crmActivities.note,
+      dueAt: crmActivities.dueAt,
+      completedAt: crmActivities.completedAt,
+      assignedTo: crmActivities.assignedTo,
+      assigneeName: users.name,
+      leadId: crmActivities.leadId,
+      dealId: crmActivities.dealId,
+      contactId: crmActivities.contactId,
+      companyId: crmActivities.companyId,
+      createdAt: crmActivities.createdAt,
+    })
+    .from(crmActivities)
+    .leftJoin(users, eq(users.id, crmActivities.assignedTo))
+    .where(eq(crmActivities.workspaceId, workspaceId))
+    .orderBy(asc(sql`${crmActivities.completedAt} is not null`), asc(crmActivities.dueAt), desc(crmActivities.createdAt));
+}
+
+export async function createCrmActivity(workspaceId: string, userId: string, input: CreateCrmActivityInput) {
+  const [activity] = await db
+    .insert(crmActivities)
+    .values({
+      workspaceId,
+      companyId: input.companyId ?? null,
+      contactId: input.contactId ?? null,
+      leadId: input.leadId ?? null,
+      dealId: input.dealId ?? null,
+      type: input.type,
+      title: input.title,
+      note: input.note || null,
+      dueAt: input.dueAt ? new Date(input.dueAt) : null,
+      assignedTo: input.assignedTo ?? userId,
+      createdBy: userId,
+    })
+    .returning();
+  return activity;
+}
+
+export async function updateCrmActivity(workspaceId: string, activityId: string, input: UpdateCrmActivityInput) {
+  const rows = await db
+    .select()
+    .from(crmActivities)
+    .where(and(eq(crmActivities.id, activityId), eq(crmActivities.workspaceId, workspaceId)))
+    .limit(1);
+  if (!rows[0]) throw new NotFoundError("پیگیری یافت نشد.");
+
+  const patch: Partial<typeof crmActivities.$inferInsert> = {};
+  if (input.completed !== undefined) patch.completedAt = input.completed ? new Date() : null;
+  if (input.dueAt !== undefined) patch.dueAt = input.dueAt ? new Date(input.dueAt) : null;
+  if (input.assignedTo !== undefined) patch.assignedTo = input.assignedTo;
+
+  const [activity] = await db.update(crmActivities).set(patch).where(eq(crmActivities.id, activityId)).returning();
+  return activity;
+}
+
+export async function listCrmProducts(workspaceId: string) {
+  return db
+    .select()
+    .from(crmProducts)
+    .where(and(eq(crmProducts.workspaceId, workspaceId), eq(crmProducts.isActive, true)))
+    .orderBy(crmProducts.name);
+}
+
+export async function createCrmProduct(workspaceId: string, input: CreateCrmProductInput) {
+  const [product] = await db
+    .insert(crmProducts)
+    .values({
+      workspaceId,
+      name: input.name,
+      sku: input.sku || null,
+      unitPrice: input.unitPrice,
+      description: input.description || null,
+    })
+    .returning();
+  return product;
+}
+
+
+export async function convertDealToProject(
+  workspaceId: string,
+  userId: string,
+  dealId: string,
+  input: ConvertDealToProjectInput,
+) {
+  const rows = await db
+    .select({
+      id: crmDeals.id,
+      title: crmDeals.title,
+      status: crmDeals.status,
+      value: crmDeals.value,
+      ownerId: crmDeals.ownerId,
+      projectId: crmDeals.projectId,
+      companyName: crmCompanies.name,
+      contactName: crmContacts.name,
+    })
+    .from(crmDeals)
+    .leftJoin(crmCompanies, eq(crmCompanies.id, crmDeals.companyId))
+    .leftJoin(crmContacts, eq(crmContacts.id, crmDeals.contactId))
+    .where(and(eq(crmDeals.id, dealId), eq(crmDeals.workspaceId, workspaceId)))
+    .limit(1);
+
+  const deal = rows[0];
+  if (!deal) throw new NotFoundError("فرصت فروش یافت نشد.");
+  if (deal.status !== "won") {
+    throw new ApiError("فقط فروش برنده‌شده را می‌توان به پروژه اجرایی تبدیل کرد.", 409);
+  }
+  if (deal.projectId) {
+    throw new ApiError("برای این فروش قبلاً پروژه اجرایی ساخته شده است.", 409);
+  }
+
+  const customerName = deal.companyName || deal.contactName || "مشتری";
+  const memberIds = Array.from(
+    new Set([...(input.memberIds ?? []), ...(deal.ownerId ? [deal.ownerId] : [])]),
+  );
+
+  const project = await createProject(workspaceId, userId, {
+    name: input.name || deal.title,
+    description:
+      input.description ||
+      `پروژه ایجادشده از فروش «${deal.title}» برای ${customerName}. مبلغ فروش: ${Number(deal.value ?? 0).toLocaleString("fa-IR")} تومان.`,
+    priority: input.priority,
+    color: input.color,
+    startDate: new Date().toISOString(),
+    dueDate: input.dueDate ?? null,
+    memberIds,
+  });
+
+  await db
+    .update(crmDeals)
+    .set({ projectId: project.id, updatedAt: new Date() })
+    .where(and(eq(crmDeals.id, deal.id), eq(crmDeals.workspaceId, workspaceId)));
+
+  await db.insert(crmActivities).values({
+    workspaceId,
+    dealId: deal.id,
+    type: "note",
+    title: "تبدیل فروش به پروژه اجرایی",
+    note: `پروژه «${project.name}» از این فروش ساخته شد.`,
+    createdBy: userId,
+    completedAt: new Date(),
+  });
+
+  return project;
 }
