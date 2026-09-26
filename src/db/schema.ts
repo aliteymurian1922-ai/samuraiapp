@@ -334,7 +334,7 @@ export const projectTemplates = pgTable("project_templates", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  index("project_templates_workspace_idx").on(t.workspaceId),
+  index("project_templates_workspace_idx").on(t.workspaceId, t.isActive),
 ]);
 
 export const projectTemplateTasks = pgTable("project_template_tasks", {
@@ -368,7 +368,7 @@ export const automationRules = pgTable("automation_rules", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("automation_rules_workspace_idx").on(t.workspaceId),
-  index("automation_rules_trigger_idx").on(t.workspaceId, t.triggerType, t.isActive),
+  index("automation_rules_workspace_trigger_idx").on(t.workspaceId, t.triggerType, t.isActive),
 ]);
 
 export const automationRuns = pgTable("automation_runs", {
