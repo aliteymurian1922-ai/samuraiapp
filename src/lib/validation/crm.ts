@@ -56,3 +56,27 @@ export const updateDealSchema = z.object({
   lostReason: optionalText(300),
 });
 export type UpdateDealInput = z.infer<typeof updateDealSchema>;
+
+
+export const createProductSchema = z.object({
+  name: z.string().trim().min(2, "نام محصول یا خدمت را وارد کنید.").max(180),
+  sku: optionalText(80),
+  unitPrice: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+  description: optionalText(4000),
+});
+export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+export const updateProductSchema = createProductSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
+export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+
+export const convertDealToProjectSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  description: z.string().trim().max(4000).optional().nullable(),
+  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
+  color: z.string().trim().max(20).default("#4f46e5"),
+  dueDate: z.string().datetime().optional().nullable(),
+  memberIds: z.array(z.string().uuid()).default([]),
+});
+export type ConvertDealToProjectInput = z.infer<typeof convertDealToProjectSchema>;
