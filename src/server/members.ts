@@ -13,6 +13,7 @@ export async function listWorkspaceMembers(workspaceId: string) {
       email: users.email,
       avatarColor: users.avatarColor,
       role: memberships.role,
+      weeklyCapacityMinutes: memberships.weeklyCapacityMinutes,
       lastSeenAt: users.lastSeenAt,
       joinedAt: memberships.createdAt,
     })
@@ -34,6 +35,18 @@ export async function addMembership(workspaceId: string, userId: string, role: M
 
 export async function updateMembershipRole(membershipId: string, role: MembershipRole) {
   const [m] = await db.update(memberships).set({ role }).where(eq(memberships.id, membershipId)).returning();
+  return m;
+}
+
+export async function updateMembershipSettings(
+  membershipId: string,
+  patch: { role?: MembershipRole; weeklyCapacityMinutes?: number },
+) {
+  const [m] = await db
+    .update(memberships)
+    .set(patch)
+    .where(eq(memberships.id, membershipId))
+    .returning();
   return m;
 }
 
