@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { taskSavedViews } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import type { CreateTaskSavedViewInput } from "@/lib/validation/task-saved-view";
-import { NotFoundError } from "@/lib/api-response";
+import { ApiError, NotFoundError } from "@/lib/api-response";
 
 export async function listTaskSavedViews(workspaceId: string, userId: string) {
   return db
@@ -19,6 +19,22 @@ export async function createTaskSavedView(
   userId: string,
   input: CreateTaskSavedViewInput,
 ) {
+  const existing = await db
+    .select({ id: taskSavedViews.id })
+    .from(taskSavedViews)
+    .where(
+      and(
+        eq(taskSavedViews.workspaceId, workspaceId),
+        eq(taskSavedViews.userId, userId),
+        eq(taskSavedViews.name, input.name),
+      ),
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    throw new ApiError("یک View با این نام از قبل ذخیره شده است.", 409);
+  }
+
   return db.transaction(async (tx) => {
     if (input.isDefault) {
       await tx
