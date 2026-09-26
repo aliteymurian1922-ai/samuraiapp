@@ -224,6 +224,12 @@ export async function updateLead(workspaceId: string, leadId: string, input: Upd
   if (!existing[0]) throw new NotFoundError("سرنخ یافت نشد.");
 
   const patch: Partial<typeof crmLeads.$inferInsert> = { updatedAt: new Date() };
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.companyName !== undefined) patch.companyName = input.companyName || null;
+  if (input.phone !== undefined) patch.phone = input.phone || null;
+  if (input.email !== undefined) patch.email = input.email || null;
+  if (input.source !== undefined) patch.source = input.source || null;
+  if (input.estimatedValue !== undefined) patch.estimatedValue = input.estimatedValue;
   if (input.status !== undefined) {
     patch.status = input.status;
     if (input.status === "converted") patch.convertedAt = new Date();
