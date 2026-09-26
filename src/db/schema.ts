@@ -528,7 +528,10 @@ export const taskDependencies = pgTable("task_dependencies", {
   dependsOnTaskId: uuid("depends_on_task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
   type: dependencyTypeEnum("type").notNull().default("blocked_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [uniqueIndex("task_dependencies_unique_idx").on(t.taskId, t.dependsOnTaskId)]);
+}, (t) => [
+  uniqueIndex("task_dependencies_unique_idx").on(t.taskId, t.dependsOnTaskId),
+  index("task_dependencies_depends_on_idx").on(t.dependsOnTaskId),
+]);
 
 export const taskTags = pgTable("task_tags", {
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
@@ -597,6 +600,7 @@ export const timeEntries = pgTable("time_entries", {
 }, (t) => [
   index("time_entries_task_idx").on(t.taskId),
   index("time_entries_user_idx").on(t.userId),
+  index("time_entries_workspace_started_idx").on(t.workspaceId, t.startedAt),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -676,6 +680,7 @@ export const notifications = pgTable("notifications", {
 }, (t) => [
   index("notifications_user_idx").on(t.userId, t.isRead),
   index("notifications_workspace_idx").on(t.workspaceId),
+  index("notifications_workspace_user_created_idx").on(t.workspaceId, t.userId, t.createdAt),
 ]);
 
 export const activities = pgTable("activities", {
