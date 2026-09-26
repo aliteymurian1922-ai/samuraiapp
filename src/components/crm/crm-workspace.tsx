@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ type Deal = {
   source: string | null;
   expectedCloseAt: string | null;
   lostReason: string | null;
+  projectId: string | null;
   createdAt: string;
   companyName: string | null;
   contactName: string | null;
@@ -54,6 +56,8 @@ type Overview = {
     openDeals: number;
     openValue: number;
     wonDeals: number;
+    wonValue: number;
+    weightedForecast: number;
     conversionRate: number;
   };
 };
@@ -89,7 +93,18 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers";
+type Product = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unitPrice: number;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type Tab = "pipeline" | "leads" | "customers" | "products";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -112,6 +127,7 @@ export function CrmWorkspace() {
   const [leadOpen, setLeadOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [dealOpen, setDealOpen] = useState(false);
+  const [productOpen, setProductOpen] = useState(false);
 
   const overview = useQuery({
     queryKey: ["crm", "overview"],
@@ -128,6 +144,11 @@ export function CrmWorkspace() {
     queryFn: () => api.get<{ customers: Customer[] }>("/api/crm/customers"),
   });
 
+  const products = useQuery({
+    queryKey: ["crm", "products"],
+    queryFn: () => api.get<{ products: Product[] }>("/api/crm/products"),
+  });
+
   const { data: memberData } = useMembers();
 
   const invalidateCrm = async () => {
@@ -135,6 +156,7 @@ export function CrmWorkspace() {
       queryClient.invalidateQueries({ queryKey: ["crm", "overview"] }),
       queryClient.invalidateQueries({ queryKey: ["crm", "leads"] }),
       queryClient.invalidateQueries({ queryKey: ["crm", "customers"] }),
+      queryClient.invalidateQueries({ queryKey: ["crm", "products"] }),
     ]);
   };
 
@@ -167,6 +189,15 @@ export function CrmWorkspace() {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  const createProjectFromDeal = useMutation({
+    mutationFn: (id: string) => api.post<{ project: { id: string; name: string } }>(`/api/crm/deals/${id}/project`, {}),
+    onSuccess: async ({ project }) => {
+      await queryClient.invalidateQueries({ queryKey: ["crm", "overview"] });
+      toast.success(`پروژه «${project.name}» ساخته شد.`);
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
   const metrics = overview.data?.metrics;
 
   return (
@@ -180,6 +211,7 @@ export function CrmWorkspace() {
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => setCustomerOpen(true)}>مشتری جدید</Button>
           <Button variant="secondary" onClick={() => setLeadOpen(true)}>سرنخ جدید</Button>
+          <Button variant="secondary" onClick={() => setProductOpen(true)}>محصول / خدمت</Button>
           <Button onClick={() => setDealOpen(true)}>فرصت فروش جدید</Button>
         </div>
       </div>
@@ -192,8 +224,16 @@ export function CrmWorkspace() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <MetricCard label="مشتریان" value={metrics?.customers ?? 0} sub="مخاطب ثبت‌شده" />
           <MetricCard label="سرنخ‌های فعال" value={metrics?.activeLeads ?? 0} sub={`از ${numberFa.format(metrics?.leads ?? 0)} سرنخ`} />
-          <MetricCard label="ارزش فرصت‌های باز" value={moneyFa.format(metrics?.openValue ?? 0)} sub="تومان" />
-          <MetricCard label="نرخ برد" value={`${numberFa.format(metrics?.conversionRate ?? 0)}٪`} sub={`${numberFa.format(metrics?.wonDeals ?? 0)} فروش موفق`} />
+          <MetricCard
+            label="ارزش فرصت‌های باز"
+            value={moneyFa.format(metrics?.openValue ?? 0)}
+            sub={`پیش‌بینی وزنی: ${moneyFa.format(metrics?.weightedForecast ?? 0)} تومان`}
+          />
+          <MetricCard
+            label="نرخ برد"
+            value={`${numberFa.format(metrics?.conversionRate ?? 0)}٪`}
+            sub={`فروش موفق: ${moneyFa.format(metrics?.wonValue ?? 0)} تومان`}
+          />
         </div>
       )}
 
@@ -201,6 +241,7 @@ export function CrmWorkspace() {
         <TabButton active={tab === "pipeline"} onClick={() => setTab("pipeline")}>Pipeline فروش</TabButton>
         <TabButton active={tab === "leads"} onClick={() => setTab("leads")}>سرنخ‌ها</TabButton>
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
+        <TabButton active={tab === "products"} onClick={() => setTab("products")}>محصولات و خدمات</TabButton>
       </div>
 
       {tab === "pipeline" && (
@@ -210,6 +251,8 @@ export function CrmWorkspace() {
           onMove={(id, stageId) => moveDeal.mutate({ id, stageId })}
           moving={moveDeal.isPending}
           onCreate={() => setDealOpen(true)}
+          onCreateProject={(id) => createProjectFromDeal.mutate(id)}
+          creatingProject={createProjectFromDeal.isPending}
         />
       )}
 
@@ -232,6 +275,14 @@ export function CrmWorkspace() {
         />
       )}
 
+      {tab === "products" && (
+        <ProductsView
+          products={products.data?.products ?? []}
+          isLoading={products.isLoading}
+          onCreate={() => setProductOpen(true)}
+        />
+      )}
+
       <LeadDialog
         open={leadOpen}
         onOpenChange={setLeadOpen}
@@ -250,6 +301,11 @@ export function CrmWorkspace() {
         overview={overview.data}
         customers={customers.data?.customers ?? []}
         members={memberData?.members ?? []}
+        onCreated={invalidateCrm}
+      />
+      <ProductDialog
+        open={productOpen}
+        onOpenChange={setProductOpen}
         onCreated={invalidateCrm}
       />
     </div>
@@ -284,12 +340,16 @@ function PipelineView({
   onMove,
   moving,
   onCreate,
+  onCreateProject,
+  creatingProject,
 }: {
   overview?: Overview;
   isLoading: boolean;
   onMove: (id: string, stageId: string) => void;
   moving: boolean;
   onCreate: () => void;
+  onCreateProject: (id: string) => void;
+  creatingProject: boolean;
 }) {
   if (isLoading) {
     return <div className="flex gap-3 overflow-hidden">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-96 min-w-[270px] flex-1" />)}</div>;
@@ -359,6 +419,29 @@ function PipelineView({
                           <option key={target.id} value={target.id}>{target.name}</option>
                         ))}
                       </select>
+
+                      {stage.isWon && (
+                        <div className="mt-2">
+                          {deal.projectId ? (
+                            <Link
+                              href={`/app/projects/${deal.projectId}`}
+                              className="flex h-8 items-center justify-center rounded-lg bg-emerald-50 px-2 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              مشاهده پروژه اجرایی
+                            </Link>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="w-full"
+                              loading={creatingProject}
+                              onClick={() => onCreateProject(deal.id)}
+                            >
+                              ساخت پروژه از این فروش
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </Card>
                   ))
                 )}
@@ -495,6 +578,54 @@ function CustomersView({
             {customer.ownerName && <p>مسئول: {customer.ownerName}</p>}
             {customer.source && <p>منبع آشنایی: {customer.source}</p>}
           </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ProductsView({
+  products,
+  isLoading,
+  onCreate,
+}: {
+  products: Product[];
+  isLoading: boolean;
+  onCreate: () => void;
+}) {
+  if (isLoading) return <Skeleton className="h-72" />;
+
+  if (products.length === 0) {
+    return (
+      <EmptyState
+        title="هنوز محصول یا خدمتی ثبت نشده"
+        description="محصولات و خدمات قابل فروش را ثبت کنید تا در فرصت‌های فروش استفاده شوند."
+        action={<Button size="sm" onClick={onCreate}>ثبت اولین محصول</Button>}
+      />
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {products.map((product) => (
+        <Card key={product.id} className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate font-bold text-(--color-text)">{product.name}</p>
+                {!product.isActive && <Badge variant="outline">غیرفعال</Badge>}
+              </div>
+              <p className="mt-1 text-[11px] text-(--color-muted)">
+                {product.sku ? `کد: ${product.sku}` : "بدون کد محصول"}
+              </p>
+            </div>
+            <p className="shrink-0 text-sm font-extrabold text-(--color-primary)">
+              {moneyFa.format(product.unitPrice)} تومان
+            </p>
+          </div>
+          {product.description && (
+            <p className="mt-3 line-clamp-3 text-xs leading-6 text-(--color-muted)">{product.description}</p>
+          )}
         </Card>
       ))}
     </div>
@@ -731,6 +862,59 @@ function DealDialog({
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>انصراف</Button>
             <Button type="submit" loading={submitting}>ایجاد فرصت</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: () => Promise<void>;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+
+    try {
+      setSubmitting(true);
+      await api.post("/api/crm/products", {
+        name: String(form.get("name") || ""),
+        sku: String(form.get("sku") || "") || null,
+        unitPrice: Number(form.get("unitPrice") || 0),
+        description: String(form.get("description") || "") || null,
+      });
+      await onCreated();
+      toast.success("محصول یا خدمت ثبت شد.");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent title="محصول یا خدمت جدید" description="چیزی را که به مشتری می‌فروشید به کاتالوگ CRM اضافه کنید.">
+        <form onSubmit={submit} className="space-y-3">
+          <Field label="نام محصول / خدمت"><Input name="name" required /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="کد محصول"><Input name="sku" placeholder="اختیاری" /></Field>
+            <Field label="قیمت واحد (تومان)"><Input name="unitPrice" type="number" min="0" defaultValue="0" /></Field>
+          </div>
+          <Field label="توضیحات"><Textarea name="description" rows={3} /></Field>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>انصراف</Button>
+            <Button type="submit" loading={submitting}>ثبت محصول</Button>
           </div>
         </form>
       </DialogContent>
