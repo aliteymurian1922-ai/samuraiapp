@@ -88,3 +88,14 @@ export const createCrmProductSchema = z.object({
   description: optionalText(4000),
 });
 export type CreateCrmProductInput = z.infer<typeof createCrmProductSchema>;
+
+
+export const convertDealToProjectSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  description: z.string().trim().max(4000).optional().nullable(),
+  priority: z.enum(["critical", "high", "medium", "low"]).default("medium"),
+  color: z.string().trim().max(20).default("#4f46e5"),
+  dueDate: z.string().datetime().optional().nullable(),
+  memberIds: z.array(z.string().uuid()).default([]),
+});
+export type ConvertDealToProjectInput = z.infer<typeof convertDealToProjectSchema>;
