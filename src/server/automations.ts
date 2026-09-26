@@ -38,10 +38,25 @@ type EntitySnapshot = {
   value?: number | null;
 };
 
+type RuleConfig = {
+  description?: string | null;
+  conditions?: Record<string, unknown>;
+  actionConfig?: Record<string, unknown>;
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function getRuleConfig(value: unknown): RuleConfig {
+  const root = asRecord(value);
+  return {
+    description: typeof root.description === "string" ? root.description : null,
+    conditions: asRecord(root.conditions),
+    actionConfig: asRecord(root.actionConfig),
+  };
 }
 
 function numberConfig(config: Record<string, unknown>, key: string, fallback: number) {
@@ -88,6 +103,7 @@ async function getEntitySnapshot(context: AutomationContext): Promise<EntitySnap
 
   const deal = rows[0];
   if (!deal) return null;
+
   return {
     id: deal.id,
     title: deal.title,
@@ -99,12 +115,9 @@ async function getEntitySnapshot(context: AutomationContext): Promise<EntitySnap
   };
 }
 
-function conditionsMatch(conditionsValue: unknown, entity: EntitySnapshot) {
-  const conditions = asRecord(conditionsValue);
-
+function conditionsMatch(conditions: Record<string, unknown>, entity: EntitySnapshot) {
   if (typeof conditions.status === "string" && conditions.status !== entity.status) return false;
   if (typeof conditions.stageId === "string" && conditions.stageId !== entity.stageId) return false;
-
   return true;
 }
 
@@ -113,10 +126,11 @@ async function executeRule(
   context: AutomationContext,
   entity: EntitySnapshot,
 ) {
-  const config = asRecord(rule.actionConfig);
+  const config = getRuleConfig(rule.config);
+  const actionConfig = config.actionConfig ?? {};
 
-  if (rule.action === "create_follow_up") {
-    const dueInDays = Math.max(0, Math.min(365, numberConfig(config, "dueInDays", 1)));
+  if (rule.actionType === "create_follow_up") {
+    const dueInDays = Math.max(0, Math.min(365, numberConfig(actionConfig, "dueInDays", 1)));
     const dueAt = new Date(Date.now() + dueInDays * 24 * 60 * 60 * 1000);
 
     await db.insert(crmActivities).values({
@@ -124,51 +138,57 @@ async function executeRule(
       leadId: context.entityType === "crm_lead" ? entity.id : null,
       dealId: context.entityType === "crm_deal" ? entity.id : null,
       type: "task",
-      title: stringConfig(config, "title", `پیگیری خودکار: ${entity.title}`),
-      note: stringConfig(config, "note", "این پیگیری توسط اتوماسیون سامورایی ساخته شده است."),
+      title: stringConfig(actionConfig, "title", `پیگیری خودکار: ${entity.title}`),
+      note: stringConfig(actionConfig, "note", "این پیگیری توسط اتوماسیون سامورایی ساخته شده است."),
       dueAt,
       assignedTo: entity.ownerId,
       createdBy: context.actorId,
     });
 
-    return "پیگیری خودکار ایجاد شد.";
+    return { message: "پیگیری خودکار ایجاد شد." };
   }
 
-  if (rule.action === "notify_owner") {
-    if (!entity.ownerId) return "بدون مسئول؛ اعلان ساخته نشد.";
+  if (rule.actionType === "notify_owner") {
+    if (!entity.ownerId) return { message: "بدون مسئول؛ اعلان ساخته نشد.", skipped: true };
 
     await db.insert(notifications).values({
       workspaceId: context.workspaceId,
       userId: entity.ownerId,
       type: "system",
       priority: "important",
-      title: stringConfig(config, "title", "سامورایی: اقدام لازم است"),
-      body: stringConfig(config, "body", `«${entity.title}» نیاز به بررسی دارد.`),
-      link: context.entityType === "crm_deal" ? "/app/crm" : "/app/crm",
+      title: stringConfig(actionConfig, "title", "سامورایی: اقدام لازم است"),
+      body: stringConfig(actionConfig, "body", `«${entity.title}» نیاز به بررسی دارد.`),
+      link: "/app/crm",
     });
 
-    return "اعلان برای مسئول ایجاد شد.";
+    return { message: "اعلان برای مسئول ایجاد شد." };
   }
 
-  if (rule.action === "create_project") {
-    if (context.entityType !== "crm_deal") return "این اقدام فقط برای فرصت فروش قابل اجراست.";
-    if (entity.status !== "won") return "فروش هنوز برنده نشده است.";
-    if (entity.projectId) return "برای این فروش قبلاً پروژه ساخته شده است.";
+  if (rule.actionType === "create_project") {
+    if (context.entityType !== "crm_deal") {
+      return { message: "ساخت پروژه فقط برای فرصت فروش قابل اجراست.", skipped: true };
+    }
+    if (entity.status !== "won") {
+      return { message: "فروش هنوز برنده نشده است.", skipped: true };
+    }
+    if (entity.projectId) {
+      return { message: "برای این فروش قبلاً پروژه ساخته شده است.", skipped: true };
+    }
 
-    const priorityRaw = stringConfig(config, "priority", "medium");
+    const priorityRaw = stringConfig(actionConfig, "priority", "medium");
     const priority = ["critical", "high", "medium", "low"].includes(priorityRaw)
       ? (priorityRaw as "critical" | "high" | "medium" | "low")
       : "medium";
 
     const project = await createProject(context.workspaceId, context.actorId, {
-      name: stringConfig(config, "name", entity.title),
+      name: stringConfig(actionConfig, "name", entity.title),
       description: stringConfig(
-        config,
+        actionConfig,
         "description",
         `پروژه به‌صورت خودکار از فروش موفق «${entity.title}» ساخته شد.`,
       ),
       priority,
-      color: stringConfig(config, "color", "#4f46e5"),
+      color: stringConfig(actionConfig, "color", "#4f46e5"),
       startDate: new Date().toISOString(),
       dueDate: null,
       memberIds: entity.ownerId ? [entity.ownerId] : [],
@@ -179,27 +199,82 @@ async function executeRule(
       .set({ projectId: project.id, updatedAt: new Date() })
       .where(and(eq(crmDeals.id, entity.id), eq(crmDeals.workspaceId, context.workspaceId)));
 
-    return `پروژه «${project.name}» ساخته شد.`;
+    return { message: `پروژه «${project.name}» ساخته شد.`, projectId: project.id };
   }
 
-  return "اقدام شناخته نشد.";
+  return { message: "اقدام شناخته نشد.", skipped: true };
 }
 
 export async function listAutomationRules(workspaceId: string) {
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: automationRules.id,
+      workspaceId: automationRules.workspaceId,
+      name: automationRules.name,
+      triggerType: automationRules.triggerType,
+      actionType: automationRules.actionType,
+      config: automationRules.config,
+      isActive: automationRules.isActive,
+      createdBy: automationRules.createdBy,
+      lastRunAt: automationRules.lastRunAt,
+      createdAt: automationRules.createdAt,
+      updatedAt: automationRules.updatedAt,
+      runCount: sql<number>`(
+        select count(*)::int
+        from automation_runs ar
+        where ar.rule_id = ${automationRules.id}
+          and ar.status = 'success'
+      )`,
+    })
     .from(automationRules)
     .where(eq(automationRules.workspaceId, workspaceId))
     .orderBy(desc(automationRules.createdAt));
+
+  return rows.map((row) => {
+    const config = getRuleConfig(row.config);
+    return {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      name: row.name,
+      description: config.description ?? null,
+      trigger: row.triggerType,
+      action: row.actionType,
+      conditions: config.conditions ?? {},
+      actionConfig: config.actionConfig ?? {},
+      isActive: row.isActive,
+      createdBy: row.createdBy,
+      runCount: row.runCount,
+      lastRunAt: row.lastRunAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  });
 }
 
 export async function listAutomationRuns(workspaceId: string, limit = 30) {
-  return db
+  const rows = await db
     .select()
     .from(automationRuns)
     .where(eq(automationRuns.workspaceId, workspaceId))
     .orderBy(desc(automationRuns.createdAt))
     .limit(limit);
+
+  return rows.map((run) => {
+    const result = asRecord(run.result);
+    return {
+      id: run.id,
+      workspaceId: run.workspaceId,
+      ruleId: run.ruleId,
+      entityType: run.sourceEntityType,
+      entityId: run.sourceEntityId,
+      status: run.status,
+      message:
+        typeof result.message === "string"
+          ? result.message
+          : run.error || null,
+      createdAt: run.createdAt,
+    };
+  });
 }
 
 export async function createAutomationRule(
@@ -212,11 +287,13 @@ export async function createAutomationRule(
     .values({
       workspaceId,
       name: input.name,
-      description: input.description || null,
-      trigger: input.trigger,
-      action: input.action,
-      conditions: input.conditions,
-      actionConfig: input.actionConfig,
+      triggerType: input.trigger,
+      actionType: input.action,
+      config: {
+        description: input.description || null,
+        conditions: input.conditions,
+        actionConfig: input.actionConfig,
+      },
       isActive: input.isActive,
       createdBy: userId,
     })
@@ -236,14 +313,26 @@ export async function updateAutomationRule(
     .where(and(eq(automationRules.id, ruleId), eq(automationRules.workspaceId, workspaceId)))
     .limit(1);
 
-  if (!rows[0]) throw new NotFoundError("اتوماسیون یافت نشد.");
+  const existing = rows[0];
+  if (!existing) throw new NotFoundError("اتوماسیون یافت نشد.");
+
+  const current = getRuleConfig(existing.config);
+  const nextConfig = {
+    description: input.description !== undefined ? input.description : current.description ?? null,
+    conditions: input.conditions !== undefined ? input.conditions : current.conditions ?? {},
+    actionConfig: input.actionConfig !== undefined ? input.actionConfig : current.actionConfig ?? {},
+  };
 
   const patch: Partial<typeof automationRules.$inferInsert> = { updatedAt: new Date() };
   if (input.name !== undefined) patch.name = input.name;
-  if (input.description !== undefined) patch.description = input.description;
   if (input.isActive !== undefined) patch.isActive = input.isActive;
-  if (input.conditions !== undefined) patch.conditions = input.conditions;
-  if (input.actionConfig !== undefined) patch.actionConfig = input.actionConfig;
+  if (
+    input.description !== undefined ||
+    input.conditions !== undefined ||
+    input.actionConfig !== undefined
+  ) {
+    patch.config = nextConfig;
+  }
 
   const [rule] = await db
     .update(automationRules)
@@ -263,7 +352,7 @@ export async function runCrmAutomations(context: AutomationContext) {
       .where(
         and(
           eq(automationRules.workspaceId, context.workspaceId),
-          eq(automationRules.trigger, context.trigger),
+          eq(automationRules.triggerType, context.trigger),
           eq(automationRules.isActive, true),
         ),
       ),
@@ -274,57 +363,55 @@ export async function runCrmAutomations(context: AutomationContext) {
   const results: { ruleId: string; status: "success" | "failed" | "skipped"; message: string }[] = [];
 
   for (const rule of rules) {
-    if (!conditionsMatch(rule.conditions, entity)) {
+    const config = getRuleConfig(rule.config);
+    if (!conditionsMatch(config.conditions ?? {}, entity)) {
       const message = "شرایط این اتوماسیون برقرار نبود.";
+
       await db.insert(automationRuns).values({
         workspaceId: context.workspaceId,
         ruleId: rule.id,
-        entityType: context.entityType,
-        entityId: entity.id,
         status: "skipped",
-        message,
-        payload: { trigger: context.trigger },
+        sourceEntityType: context.entityType,
+        sourceEntityId: entity.id,
+        result: { message, trigger: context.trigger },
       });
+
       results.push({ ruleId: rule.id, status: "skipped", message });
       continue;
     }
 
     try {
-      const message = await executeRule(rule, context, entity);
+      const outcome = await executeRule(rule, context, entity);
+      const status = outcome.skipped ? "skipped" : "success";
 
       await db.transaction(async (tx) => {
         await tx.insert(automationRuns).values({
           workspaceId: context.workspaceId,
           ruleId: rule.id,
-          entityType: context.entityType,
-          entityId: entity.id,
-          status: "success",
-          message,
-          payload: { trigger: context.trigger },
+          status,
+          sourceEntityType: context.entityType,
+          sourceEntityId: entity.id,
+          result: { ...outcome, trigger: context.trigger },
         });
 
         await tx
           .update(automationRules)
-          .set({
-            runCount: sql`${automationRules.runCount} + 1`,
-            lastRunAt: new Date(),
-            updatedAt: new Date(),
-          })
+          .set({ lastRunAt: new Date(), updatedAt: new Date() })
           .where(eq(automationRules.id, rule.id));
       });
 
-      results.push({ ruleId: rule.id, status: "success", message });
+      results.push({ ruleId: rule.id, status, message: outcome.message });
     } catch (error) {
       const message = error instanceof Error ? error.message : "اجرای اتوماسیون ناموفق بود.";
 
       await db.insert(automationRuns).values({
         workspaceId: context.workspaceId,
         ruleId: rule.id,
-        entityType: context.entityType,
-        entityId: entity.id,
         status: "failed",
-        message: message.slice(0, 500),
-        payload: { trigger: context.trigger },
+        sourceEntityType: context.entityType,
+        sourceEntityId: entity.id,
+        result: { trigger: context.trigger },
+        error: message,
       });
 
       results.push({ ruleId: rule.id, status: "failed", message });
