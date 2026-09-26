@@ -223,6 +223,10 @@ export async function updateLead(workspaceId: string, leadId: string, input: Upd
     .limit(1);
   if (!existing[0]) throw new NotFoundError("سرنخ یافت نشد.");
 
+  if (input.status === "converted" && existing[0].status !== "converted") {
+    throw new ApiError("برای تبدیل سرنخ از عملیات تبدیل استفاده کنید.", 409);
+  }
+
   const patch: Partial<typeof crmLeads.$inferInsert> = { updatedAt: new Date() };
   if (input.name !== undefined) patch.name = input.name;
   if (input.companyName !== undefined) patch.companyName = input.companyName || null;
