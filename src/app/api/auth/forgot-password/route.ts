@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { forgotPasswordSchema } from "@/lib/validation/auth";
 import { ok, handleApiError } from "@/lib/api-response";
 import { enforceRateLimit, getRequestIp } from "@/lib/security/rate-limit";
+import { getApplicationUrl, sendPasswordResetEmail } from "@/server/email";
 
 // A transactional-email provider is not configured yet.
 // Development may expose the reset URL; production deliberately never does.
@@ -33,25 +34,45 @@ export async function POST(req: NextRequest) {
       blockMs: 60 * 60 * 1000,
     });
 
+    const genericMessage = "اگر این ایمیل ثبت شده باشد، لینک بازیابی برای آن ارسال می‌شود.";
     const rows = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
     const user = rows[0];
 
     if (!user) {
-      // Do not leak whether the email exists.
-      return ok({ message: "اگر این ایمیل ثبت شده باشد، لینک بازیابی ارسال می‌شود.", resetUrl: null });
+      return ok({ message: genericMessage, resetUrl: null });
     }
 
     const rawToken = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
+    const [tokenRecord] = await db
+      .insert(passwordResetTokens)
+      .values({ userId: user.id, tokenHash, expiresAt })
+      .returning({ id: passwordResetTokens.id });
 
-    const resetUrl = `/reset-password?token=${rawToken}`;
+    const resetPath = `/reset-password?token=${rawToken}`;
+    const appUrl = getApplicationUrl(req.nextUrl.origin);
+    const absoluteResetUrl = appUrl ? `${appUrl}${resetPath}` : null;
+
+    let delivered = false;
+    if (absoluteResetUrl) {
+      const delivery = await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: absoluteResetUrl,
+      });
+      delivered = delivery.sent;
+    }
+
+    if (process.env.NODE_ENV === "production" && !delivered) {
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, tokenRecord.id));
+      console.error("[auth] password reset email was not delivered; token revoked");
+    }
 
     return ok({
-      message: "لینک بازیابی رمز عبور ایجاد شد (چون سرویس ایمیل تنظیم نشده، لینک مستقیم نمایش داده می‌شود).",
-      resetUrl: process.env.NODE_ENV === "production" ? null : resetUrl,
+      message: genericMessage,
+      resetUrl: process.env.NODE_ENV === "production" ? null : resetPath,
     });
   } catch (error) {
     return handleApiError(error);
