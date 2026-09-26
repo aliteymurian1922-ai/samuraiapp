@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
-import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
+import { CrmActivitiesView } from "@/components/crm/crm-activities-view";\nimport { CrmPriorityView } from "@/components/crm/crm-priority-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
 import { CrmImportDialog } from "@/components/crm/crm-import-dialog";
 import {
@@ -116,7 +116,7 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers" | "activities" | "products" | "customFields";
+type Tab = "priority" | "pipeline" | "leads" | "customers" | "activities" | "products" | "customFields";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -135,7 +135,7 @@ function getErrorMessage(error: unknown) {
 
 export function CrmWorkspace() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("pipeline");
+  const [tab, setTab] = useState<Tab>("priority");
   const [leadOpen, setLeadOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [dealOpen, setDealOpen] = useState(false);
@@ -256,7 +256,7 @@ export function CrmWorkspace() {
         <TabButton active={tab === "customFields"} onClick={() => setTab("customFields")}>فیلدهای سفارشی</TabButton>
       </div>
 
-      {tab === "pipeline" && (
+      {tab === "priority" && <CrmPriorityView />}\n\n      {tab === "pipeline" && (
         <PipelineView
           overview={overview.data}
           isLoading={overview.isLoading}
