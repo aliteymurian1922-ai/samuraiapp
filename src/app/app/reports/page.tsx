@@ -180,7 +180,16 @@ function ProjectReportTab() {
 type TeamReportMember = {
   membershipId: string; name: string; role: string;
   counts: { total: number; completed: number; overdue: number };
-  workload: { level: "low" | "balanced" | "high" | "overloaded" } | null;
+  workload: {
+    level: "low" | "balanced" | "high" | "overloaded";
+    assignedMinutes: number;
+    weeklyPlannedMinutes: number;
+    trackedMinutes7d: number;
+    capacityMinutes: number;
+    utilizationPercent: number;
+    actualUtilizationPercent: number;
+    unestimatedCount: number;
+  } | null;
   totalMinutesTracked: number;
 };
 
@@ -195,14 +204,54 @@ function TeamReportTab() {
   return (
     <div className="space-y-2">
       {data.members.map((m) => (
-        <Card key={m.membershipId} className="flex items-center justify-between p-3">
-          <div className="flex items-center gap-2 text-[13px] font-medium"><FileText className="size-3.5 text-slate-400" /> {m.name}</div>
-          <div className="flex items-center gap-2 text-xs text-(--color-muted)">
-            <Badge variant="outline">{toPersianDigits(m.counts.completed)}/{toPersianDigits(m.counts.total)} تکمیل</Badge>
-            {m.counts.overdue > 0 && <Badge variant="danger">{toPersianDigits(m.counts.overdue)} عقب‌افتاده</Badge>}
-            {m.workload && <Badge variant="primary">{WORKLOAD_LABEL_FA[m.workload.level]}</Badge>}
-            <Badge variant="outline">{Math.round(m.totalMinutesTracked / 60)} ساعت ثبت‌شده</Badge>
+        <Card key={m.membershipId} className="p-4">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2 text-[13px] font-medium">
+              <FileText className="size-3.5 text-slate-400" /> {m.name}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-(--color-muted)">
+              <Badge variant="outline">{toPersianDigits(m.counts.completed)}/{toPersianDigits(m.counts.total)} تکمیل</Badge>
+              {m.counts.overdue > 0 && <Badge variant="danger">{toPersianDigits(m.counts.overdue)} عقب‌افتاده</Badge>}
+              {m.workload && <Badge variant="primary">{WORKLOAD_LABEL_FA[m.workload.level]}</Badge>}
+            </div>
           </div>
+
+          {m.workload && (
+            <div className="mt-3 grid gap-3 border-t border-(--color-border) pt-3 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+              <div>
+                <div className="flex justify-between gap-3 text-[11px] text-(--color-muted)">
+                  <span>بار برنامه‌ریزی‌شده این هفته</span>
+                  <span>
+                    {toPersianDigits(Math.round(m.workload.weeklyPlannedMinutes / 60 * 10) / 10)}
+                    {" / "}
+                    {toPersianDigits(Math.round(m.workload.capacityMinutes / 60 * 10) / 10)}
+                    {" ساعت · "}
+                    {toPersianDigits(m.workload.utilizationPercent)}٪
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full rounded-full ${m.workload.level === "overloaded" ? "bg-(--color-danger)" : m.workload.level === "high" ? "bg-(--color-warning)" : "bg-(--color-primary)"}`}
+                    style={{ width: `${Math.min(100, m.workload.utilizationPercent)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                <p className="text-sm font-bold text-(--color-text)">
+                  {toPersianDigits(Math.round(m.workload.trackedMinutes7d / 60 * 10) / 10)} ساعت
+                </p>
+                <p className="text-[10px] text-(--color-muted)">زمان واقعی ۷ روز اخیر</p>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                <p className="text-sm font-bold text-(--color-text)">
+                  {toPersianDigits(m.workload.unestimatedCount)}
+                </p>
+                <p className="text-[10px] text-(--color-muted)">Task بدون Estimate</p>
+              </div>
+            </div>
+          )}
         </Card>
       ))}
     </div>
