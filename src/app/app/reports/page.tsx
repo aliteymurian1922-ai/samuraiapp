@@ -1,3 +1,4 @@
+import Link from "next/link";
 "use client";
 
 import { useState } from "react";
@@ -14,6 +15,8 @@ import { toPersianDigits } from "@/lib/utils";
 import { RISK_LEVEL_LABEL_FA } from "@/lib/risk";
 import { WORKLOAD_LABEL_FA } from "@/lib/workload";
 import type { ManagementReport } from "@/server/reports";
+import type { SalesForecastReport } from "@/server/sales-forecast";
+import { formatJalaliDate } from "@/lib/date";
 import { BarChart3, FileText } from "lucide-react";
 
 export default function ReportsPage() {
@@ -29,11 +32,13 @@ export default function ReportsPage() {
           <TabsTrigger value="management">گزارش مدیریتی</TabsTrigger>
           <TabsTrigger value="project">گزارش پروژه</TabsTrigger>
           <TabsTrigger value="team">گزارش تیم</TabsTrigger>
+          <TabsTrigger value="sales">فروش و Forecast</TabsTrigger>
         </TabsList>
 
         <TabsContent value="management"><ManagementReportTab /></TabsContent>
         <TabsContent value="project"><ProjectReportTab /></TabsContent>
         <TabsContent value="team"><TeamReportTab /></TabsContent>
+        <TabsContent value="sales"><SalesForecastTab /></TabsContent>
       </Tabs>
     </div>
   );
@@ -100,6 +105,218 @@ function ManagementReportTab() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+
+const salesMoney = new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 });
+
+function SalesForecastTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["report-sales-forecast"],
+    queryFn: () => api.get<{ report: SalesForecastReport }>("/api/reports/sales"),
+  });
+
+  if (isLoading || !data) return <Skeleton className="h-96" />;
+
+  const r = data.report;
+  const maxTrend = Math.max(1, ...r.trend.map((item) => Number(item.wonValue)));
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <p className="text-xs text-(--color-muted)">Forecast فروش · تولید شده در {formatJalaliDate(r.generatedAt, true)}</p>
+            <p className="mt-1 text-lg font-bold text-(--color-text)">تصویر واقعی فروش ماه جاری</p>
+          </div>
+          <Badge variant="primary">
+            Forecast: {salesMoney.format(r.summary.forecastThisMonth)} تومان
+          </Badge>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <SalesMetric label="فروش قطعی ماه" value={salesMoney.format(r.summary.wonThisMonth)} suffix="تومان" />
+          <SalesMetric label="Forecast ماه" value={salesMoney.format(r.summary.forecastThisMonth)} suffix="تومان" />
+          <SalesMetric label="Pipeline باز" value={salesMoney.format(r.summary.openValue)} suffix="تومان" />
+          <SalesMetric label="Pipeline وزنی" value={salesMoney.format(r.summary.weightedOpenValue)} suffix="تومان" />
+          <SalesMetric label="نرخ برد ماه" value={toPersianDigits(r.summary.winRateThisMonth)} suffix="٪" />
+          <SalesMetric label="Deal باز" value={toPersianDigits(r.summary.openDeals)} />
+        </div>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <div>
+            <p className="text-sm font-bold text-(--color-text)">روند فروش قطعی ۶ ماه اخیر</p>
+            <p className="mt-1 text-xs text-(--color-muted)">فقط Dealهایی که واقعاً Won شده‌اند.</p>
+          </div>
+
+          <div className="mt-5 flex h-52 items-end gap-3 overflow-x-auto border-b border-(--color-border) pb-2">
+            {r.trend.map((item) => {
+              const height = Math.max(4, Math.round((Number(item.wonValue) / maxTrend) * 100));
+              const monthDate = new Date(`${item.month}-01T00:00:00Z`);
+              return (
+                <div key={item.month} className="flex min-w-[70px] flex-1 flex-col items-center justify-end">
+                  <p className="mb-2 text-[10px] font-semibold text-(--color-text)">
+                    {salesMoney.format(item.wonValue)}
+                  </p>
+                  <div className="flex h-32 w-full items-end justify-center">
+                    <div
+                      className="w-8 rounded-t-lg bg-(--color-primary)"
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[10px] text-(--color-muted)">
+                    {formatJalaliDate(monthDate).slice(0, 7)}
+                  </p>
+                  <p className="mt-0.5 text-[9px] text-slate-400">
+                    {toPersianDigits(item.wonDeals)} فروش
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div>
+            <p className="text-sm font-bold text-(--color-text)">ترکیب Pipeline باز</p>
+            <p className="mt-1 text-xs text-(--color-muted)">ارزش واقعی و وزنی هر مرحله فروش.</p>
+          </div>
+
+          {r.stages.length === 0 ? (
+            <p className="mt-4 text-xs text-(--color-muted)">Deal بازی در Pipeline وجود ندارد.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {r.stages.map((stage) => {
+                const width = r.summary.openValue
+                  ? Math.max(4, Math.round((Number(stage.value) / Number(r.summary.openValue)) * 100))
+                  : 0;
+                return (
+                  <div key={stage.stageId}>
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-(--color-text)">{stage.stageName}</span>
+                        <Badge variant="outline">{toPersianDigits(stage.probability)}٪</Badge>
+                      </div>
+                      <span className="text-(--color-muted)">
+                        {salesMoney.format(stage.value)} تومان
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-(--color-primary)" style={{ width: `${width}%` }} />
+                    </div>
+                    <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+                      <span>{toPersianDigits(stage.deals)} Deal</span>
+                      <span>وزنی: {salesMoney.format(stage.weightedValue)} تومان</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>عملکرد اعضای فروش</CardTitle>
+            <p className="mt-1 text-xs text-(--color-muted)">Pipeline، فروش قطعی و نرخ برد ماه جاری برای هر مسئول.</p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {r.team.length === 0 ? (
+            <p className="text-xs text-(--color-muted)">داده فروش کافی وجود ندارد.</p>
+          ) : (
+            r.team.map((member) => (
+              <div key={member.ownerId ?? member.ownerName} className="grid gap-2 rounded-xl bg-slate-50 px-3 py-3 text-xs sm:grid-cols-[1.2fr_repeat(4,1fr)] sm:items-center">
+                <p className="font-bold text-(--color-text)">{member.ownerName}</p>
+                <div>
+                  <p className="font-semibold text-(--color-text)">{toPersianDigits(member.openDeals)}</p>
+                  <p className="text-[10px] text-(--color-muted)">Deal باز</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-(--color-text)">{salesMoney.format(member.weightedValue)}</p>
+                  <p className="text-[10px] text-(--color-muted)">Pipeline وزنی</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-emerald-700">{salesMoney.format(member.wonValueThisMonth)}</p>
+                  <p className="text-[10px] text-(--color-muted)">فروش ماه</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-(--color-text)">{toPersianDigits(member.winRateThisMonth)}٪</p>
+                  <p className="text-[10px] text-(--color-muted)">نرخ برد</p>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Dealهای در معرض ریسک</CardTitle>
+              <p className="mt-1 text-xs text-(--color-muted)">بر اساس موعد گذشته، نبود پیگیری آینده یا احتمال پایین مرحله.</p>
+            </div>
+            {r.summary.overdueOpenDeals > 0 && (
+              <Badge variant="danger">{toPersianDigits(r.summary.overdueOpenDeals)} موعد گذشته</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {r.riskDeals.length === 0 ? (
+            <p className="text-xs text-(--color-muted)">Deal پرریسک مشخصی شناسایی نشد.</p>
+          ) : (
+            <div className="space-y-2">
+              {r.riskDeals.map((deal) => (
+                <Link
+                  key={deal.id}
+                  href={`/app/crm/deals/${deal.id}`}
+                  className="block rounded-xl border border-(--color-border) p-3 transition hover:bg-slate-50"
+                >
+                  <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="font-bold text-(--color-text)">{deal.title}</p>
+                      <p className="mt-1 text-[11px] text-(--color-muted)">
+                        {deal.ownerName || "بدون مسئول"} · {deal.stageName} · {toPersianDigits(deal.probability)}٪
+                      </p>
+                    </div>
+                    <p className="text-xs font-extrabold text-(--color-primary)">{salesMoney.format(deal.value)} تومان</p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {deal.reasons.map((reason) => <Badge key={reason} variant="warning">{reason}</Badge>)}
+                    {deal.nextFollowUpAt && (
+                      <Badge variant="outline">پیگیری: {formatJalaliDate(deal.nextFollowUpAt, true)}</Badge>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SalesMetric({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+}) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3 text-center">
+      <p className="text-base font-extrabold text-(--color-text)">{value}{suffix ? ` ${suffix}` : ""}</p>
+      <p className="mt-1 text-[10px] text-(--color-muted)">{label}</p>
     </div>
   );
 }
