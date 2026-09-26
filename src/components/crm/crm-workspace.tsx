@@ -89,6 +89,13 @@ type Lead = {
   notes: string | null;
   convertedAt: string | null;
   createdAt: string;
+  updatedAt: string;
+  score: number;
+  band: "hot" | "warm" | "cold" | "inactive" | "converted";
+  reasons: string[];
+  nextFollowUpAt: string | null;
+  overdueFollowUps: number;
+  lastActivityAt: string | null;
 };
 
 type Customer = {
@@ -476,6 +483,36 @@ function LeadsView({
   converting: boolean;
   onStatusChange: (id: string, status: Lead["status"]) => void;
 }) {
+  const [sort, setSort] = useState<"score" | "newest" | "value">("score");
+
+  const sortedLeads = useMemo(() => {
+    return [...leads].sort((a, b) => {
+      if (sort === "newest") {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+
+      if (sort === "value") {
+        return Number(b.estimatedValue ?? 0) - Number(a.estimatedValue ?? 0);
+      }
+
+      const priority = (lead: Lead) =>
+        lead.band === "converted" || lead.band === "inactive"
+          ? -1000 + lead.score
+          : lead.score;
+
+      return priority(b) - priority(a);
+    });
+  }, [leads, sort]);
+
+  const hotCount = leads.filter((lead) => lead.band === "hot").length;
+  const overdueCount = leads.filter((lead) => lead.overdueFollowUps > 0).length;
+  const activeWithoutNextStep = leads.filter(
+    (lead) =>
+      !lead.nextFollowUpAt &&
+      lead.status !== "converted" &&
+      lead.status !== "unqualified",
+  ).length;
+
   if (isLoading) return <Skeleton className="h-72" />;
 
   if (leads.length === 0) {
@@ -489,62 +526,132 @@ function LeadsView({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      {leads.map((lead) => (
-        <Card key={lead.id} className="p-4">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-bold text-(--color-text)">{lead.name}</p>
-                <Badge variant={lead.status === "converted" ? "success" : lead.status === "unqualified" ? "danger" : lead.status === "qualified" ? "primary" : "outline"}>
-                  {LEAD_STATUS_LABEL[lead.status]}
-                </Badge>
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-(--color-border) bg-white p-3">
+          <p className="text-lg font-extrabold text-(--color-primary)">{numberFa.format(hotCount)}</p>
+          <p className="mt-0.5 text-[10px] text-(--color-muted)">سرنخ داغ</p>
+        </div>
+        <div className="rounded-xl border border-(--color-border) bg-white p-3">
+          <p className="text-lg font-extrabold text-red-600">{numberFa.format(overdueCount)}</p>
+          <p className="mt-0.5 text-[10px] text-(--color-muted)">پیگیری عقب‌افتاده</p>
+        </div>
+        <div className="rounded-xl border border-(--color-border) bg-white p-3">
+          <p className="text-lg font-extrabold text-amber-600">{numberFa.format(activeWithoutNextStep)}</p>
+          <p className="mt-0.5 text-[10px] text-(--color-muted)">بدون اقدام بعدی</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold text-(--color-text)">اولویت پیگیری سرنخ‌ها</p>
+          <p className="mt-0.5 text-[10px] text-(--color-muted)">امتیاز بر اساس وضعیت، ارزش، اطلاعات، تعامل و برنامه پیگیری محاسبه می‌شود.</p>
+        </div>
+        <select
+          value={sort}
+          onChange={(event) => setSort(event.target.value as typeof sort)}
+          className="h-9 rounded-xl border border-(--color-border) bg-white px-3 text-xs text-(--color-text)"
+        >
+          <option value="score">اولویت هوشمند</option>
+          <option value="newest">جدیدترین</option>
+          <option value="value">بیشترین ارزش</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {sortedLeads.map((lead) => (
+          <Card key={lead.id} className="p-4">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-(--color-text)">{lead.name}</p>
+                  <Badge variant={lead.status === "converted" ? "success" : lead.status === "unqualified" ? "danger" : lead.status === "qualified" ? "primary" : "outline"}>
+                    {LEAD_STATUS_LABEL[lead.status]}
+                  </Badge>
+                  <Badge
+                    variant={
+                      lead.band === "hot"
+                        ? "primary"
+                        : lead.band === "warm"
+                          ? "warning"
+                          : lead.band === "converted"
+                            ? "success"
+                            : lead.band === "inactive"
+                              ? "danger"
+                              : "outline"
+                    }
+                  >
+                    امتیاز {numberFa.format(lead.score)}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-(--color-muted)">{lead.companyName || "بدون نام شرکت"}</p>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                  {lead.phone && <span>{lead.phone}</span>}
+                  {lead.email && <span>{lead.email}</span>}
+                  {lead.source && <span>منبع: {lead.source}</span>}
+                  {lead.ownerName && <span>مسئول: {lead.ownerName}</span>}
+                </div>
+
+                <div className="mt-3 space-y-1">
+                  {lead.reasons.slice(0, 2).map((reason) => (
+                    <p key={reason} className="text-[10px] leading-5 text-(--color-muted)">
+                      • {reason}
+                    </p>
+                  ))}
+                </div>
               </div>
-              <p className="mt-1 text-xs text-(--color-muted)">{lead.companyName || "بدون نام شرکت"}</p>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                {lead.phone && <span>{lead.phone}</span>}
-                {lead.email && <span>{lead.email}</span>}
-                {lead.source && <span>منبع: {lead.source}</span>}
-                {lead.ownerName && <span>مسئول: {lead.ownerName}</span>}
+
+              <div className="shrink-0 text-left">
+                <p className="text-xs font-extrabold text-(--color-primary)">
+                  {lead.estimatedValue ? `${moneyFa.format(lead.estimatedValue)} تومان` : "ارزش نامشخص"}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-400">{formatJalaliDate(lead.createdAt)}</p>
+                {lead.overdueFollowUps > 0 ? (
+                  <Badge variant="danger">پیگیری عقب‌افتاده</Badge>
+                ) : lead.nextFollowUpAt ? (
+                  <p className="mt-2 text-[10px] font-semibold text-emerald-700">
+                    بعدی: {formatJalaliDate(lead.nextFollowUpAt, true)}
+                  </p>
+                ) : null}
               </div>
             </div>
 
-            <div className="shrink-0 text-left">
-              <p className="text-xs font-extrabold text-(--color-primary)">
-                {lead.estimatedValue ? `${moneyFa.format(lead.estimatedValue)} تومان` : "ارزش نامشخص"}
-              </p>
-              <p className="mt-1 text-[10px] text-slate-400">{formatJalaliDate(lead.createdAt)}</p>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-(--color-primary)"
+                style={{ width: `${lead.score}%` }}
+              />
             </div>
-          </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-3">
-            <select
-              value={lead.status}
-              onChange={(event) => onStatusChange(lead.id, event.target.value as Lead["status"])}
-              disabled={lead.status === "converted"}
-              className="h-8 rounded-lg border border-(--color-border) bg-white px-2 text-[11px] text-(--color-muted)"
-            >
-              {Object.entries(LEAD_STATUS_LABEL).filter(([value]) => value !== "converted").map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-              {lead.status === "converted" && <option value="converted">تبدیل شد</option>}
-            </select>
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-3">
+              <select
+                value={lead.status}
+                onChange={(event) => onStatusChange(lead.id, event.target.value as Lead["status"])}
+                disabled={lead.status === "converted"}
+                className="h-8 rounded-lg border border-(--color-border) bg-white px-2 text-[11px] text-(--color-muted)"
+              >
+                {Object.entries(LEAD_STATUS_LABEL).filter(([value]) => value !== "converted").map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+                {lead.status === "converted" && <option value="converted">تبدیل شد</option>}
+              </select>
 
-            <Link
-              href={`/app/crm/leads/${lead.id}`}
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-(--color-border) bg-white px-3 text-[11px] font-semibold text-(--color-primary)"
-            >
-              مشاهده پرونده
-            </Link>
+              <Link
+                href={`/app/crm/leads/${lead.id}`}
+                className="inline-flex h-8 items-center justify-center rounded-lg border border-(--color-border) bg-white px-3 text-[11px] font-semibold text-(--color-primary)"
+              >
+                مشاهده پرونده
+              </Link>
 
-            {lead.status !== "converted" && (
-              <Button size="sm" onClick={() => onConvert(lead.id)} loading={converting}>
-                تبدیل به فرصت فروش
-              </Button>
-            )}
-          </div>
-        </Card>
-      ))}
+              {lead.status !== "converted" && (
+                <Button size="sm" onClick={() => onConvert(lead.id)} loading={converting}>
+                  تبدیل به فرصت فروش
+                </Button>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

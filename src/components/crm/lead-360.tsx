@@ -64,6 +64,19 @@ type Activity = {
 
 type Response = {
   lead: Lead;
+  score: {
+    score: number;
+    band: "hot" | "warm" | "cold" | "inactive" | "converted";
+    reasons: string[];
+    breakdown: {
+      status: number;
+      value: number;
+      completeness: number;
+      engagement: number;
+      followUp: number;
+      freshness: number;
+    };
+  };
   customFields: CustomField[];
   activities: Activity[];
   conversion: {
@@ -190,7 +203,7 @@ export function Lead360({ leadId }: { leadId: string }) {
     );
   }
 
-  const { lead, customFields, activities, conversion, metrics } = query.data;
+  const { lead, score, customFields, activities, conversion, metrics } = query.data;
   const openActivities = activities.filter((item) => !item.completedAt);
   const doneActivities = activities.filter((item) => item.completedAt);
 
@@ -226,6 +239,60 @@ export function Lead360({ leadId }: { leadId: string }) {
           )}
         </div>
       </div>
+
+      <Card className="p-4">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-bold text-(--color-text)">Lead Score</p>
+              <Badge
+                variant={
+                  score.band === "hot"
+                    ? "primary"
+                    : score.band === "warm"
+                      ? "warning"
+                      : score.band === "converted"
+                        ? "success"
+                        : score.band === "inactive"
+                          ? "danger"
+                          : "outline"
+                }
+              >
+                {numberFa.format(score.score)} از ۱۰۰
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-(--color-muted)">
+              امتیاز از وضعیت فروش، ارزش، کامل‌بودن اطلاعات، تعامل، پیگیری و تازگی سرنخ ساخته می‌شود.
+            </p>
+          </div>
+
+          <div className="w-full max-w-xs">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-(--color-primary)"
+                style={{ width: `${score.score}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <ScorePart label="وضعیت" value={score.breakdown.status} />
+          <ScorePart label="ارزش" value={score.breakdown.value} />
+          <ScorePart label="اطلاعات" value={score.breakdown.completeness} />
+          <ScorePart label="تعامل" value={score.breakdown.engagement} />
+          <ScorePart label="پیگیری" value={score.breakdown.followUp} />
+          <ScorePart label="تازگی" value={score.breakdown.freshness} />
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {score.reasons.map((reason) => (
+            <div key={reason} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-(--color-muted)">
+              {reason}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {lead.status === "converted" && conversion?.contactId && (
         <Card className="border-emerald-200 bg-emerald-50 p-4">
@@ -376,6 +443,17 @@ export function Lead360({ leadId }: { leadId: string }) {
           ]);
         }}
       />
+    </div>
+  );
+}
+
+function ScorePart({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3 text-center">
+      <p className={`text-sm font-extrabold ${value < 0 ? "text-red-600" : "text-(--color-text)"}`}>
+        {value > 0 ? "+" : ""}{numberFa.format(value)}
+      </p>
+      <p className="mt-0.5 text-[10px] text-(--color-muted)">{label}</p>
     </div>
   );
 }
