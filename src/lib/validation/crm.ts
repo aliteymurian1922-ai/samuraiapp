@@ -80,3 +80,13 @@ export const convertDealToProjectSchema = z.object({
   memberIds: z.array(z.string().uuid()).default([]),
 });
 export type ConvertDealToProjectInput = z.infer<typeof convertDealToProjectSchema>;
+
+
+export const replaceDealProductsSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string().uuid(),
+    quantity: z.number().int().min(1).max(100000).default(1),
+    unitPrice: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  })).max(100),
+});
+export type ReplaceDealProductsInput = z.infer<typeof replaceDealProductsSchema>;
