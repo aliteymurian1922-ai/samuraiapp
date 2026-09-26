@@ -9,12 +9,14 @@ import {
   Sparkles,
   Bell,
   Settings,
+  Workflow,
 } from "lucide-react";
 import { CrmIcon } from "@/components/icons/crm-icon";
 
 export const MAIN_NAV = [
   { href: "/app/dashboard", label: "داشبورد", icon: LayoutDashboard, shortcut: "D" },
   { href: "/app/crm", label: "فروش و مشتریان", icon: CrmIcon, shortcut: "C" },
+  { href: "/app/automations", label: "اتوماسیون", icon: Workflow },
   { href: "/app/projects", label: "پروژه‌ها", icon: FolderKanban, shortcut: "P" },
   { href: "/app/tasks", label: "وظایف", icon: ListChecks, shortcut: "T" },
   { href: "/app/calendar", label: "تقویم", icon: CalendarDays },
