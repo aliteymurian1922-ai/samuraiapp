@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useSearchParams } from "next/navigation";
-import { useTasks, useProjects, useMembers } from "@/hooks/use-data";
+import { useTasks, useProjects, useMembers, useProjectStatuses } from "@/hooks/use-data";
 import { useUIStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ function TasksPageInner() {
   const [assigneeId, setAssigneeId] = useState<string>("all");
   const [priority, setPriority] = useState<string>("all");
   const [onlyOverdue, setOnlyOverdue] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = useState(false);
 
   useEffect(() => {
     const taskId = searchParams.get("taskId");
@@ -46,6 +48,17 @@ function TasksPageInner() {
   const { data: membersData } = useMembers();
 
   const tasks = useMemo(() => data?.tasks ?? [], [data]);
+  const selectedTasks = useMemo(
+    () => tasks.filter((task) => selectedIds.has(task.id)),
+    [tasks, selectedIds],
+  );
+  const selectedProjectIds = useMemo(
+    () => [...new Set(selectedTasks.map((task) => task.projectId))],
+    [selectedTasks],
+  );
+  const selectedProjectId = selectedProjectIds.length === 1 ? selectedProjectIds[0] : undefined;
+  const { data: selectedProjectStatuses } = useProjectStatuses(selectedProjectId);
+
 
   async function toggleComplete(taskId: string, completed: boolean) {
     try {
@@ -54,6 +67,42 @@ function TasksPageInner() {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } catch (error) {
       toast.error(error instanceof ClientApiError ? error.message : "تغییر وضعیت وظیفه انجام نشد.");
+    }
+  }
+
+  function toggleSelection(taskId: string, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(taskId);
+      else next.delete(taskId);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(new Set(tasks.map((task) => task.id)));
+  }
+
+  async function runBulkAction(payload: Record<string, unknown>, successMessage: string) {
+    if (selectedIds.size === 0) return;
+    try {
+      setBulkPending(true);
+      await api.post("/api/tasks/bulk", {
+        ...payload,
+        taskIds: [...selectedIds],
+      });
+      setSelectedIds(new Set());
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["team-report"] }),
+      ]);
+      toast.success(successMessage);
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "عملیات گروهی انجام نشد.");
+    } finally {
+      setBulkPending(false);
     }
   }
 
@@ -70,23 +119,31 @@ function TasksPageInner() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[160px] flex-1">
           <Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input placeholder="جستجوی وظیفه..." value={search} onChange={(e) => setSearch(e.target.value)} className="pr-9" />
+          <Input
+            placeholder="جستجوی وظیفه..."
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setSelectedIds(new Set());
+            }}
+            className="pr-9"
+          />
         </div>
-        <Select value={projectId} onValueChange={setProjectId}>
+        <Select value={projectId} onValueChange={(value) => { setProjectId(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-40"><SelectValue placeholder="پروژه" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه پروژه‌ها</SelectItem>
             {(projectsData?.projects ?? []).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={assigneeId} onValueChange={setAssigneeId}>
+        <Select value={assigneeId} onValueChange={(value) => { setAssigneeId(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-36"><SelectValue placeholder="مسئول" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اعضا</SelectItem>
             {(membersData?.members ?? []).map((m) => <SelectItem key={m.userId} value={m.userId}>{m.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={priority} onValueChange={setPriority}>
+        <Select value={priority} onValueChange={(value) => { setPriority(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-32"><SelectValue placeholder="اولویت" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اولویت‌ها</SelectItem>
@@ -94,12 +151,121 @@ function TasksPageInner() {
           </SelectContent>
         </Select>
         <button
-          onClick={() => setOnlyOverdue((v) => !v)}
+          onClick={() => { setOnlyOverdue((v) => !v); setSelectedIds(new Set()); }}
           className={`rounded-lg px-3 py-2 text-xs font-medium transition ${onlyOverdue ? "bg-(--color-danger) text-white" : "border border-(--color-border) bg-white text-(--color-muted)"}`}
         >
           فقط عقب‌افتاده
         </button>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="rounded-2xl border border-(--color-primary)/20 bg-(--color-primary-soft) p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-bold text-(--color-text)">
+                {selectedIds.size.toLocaleString("fa-IR")} وظیفه انتخاب شده
+              </span>
+              {selectedIds.size < tasks.length && (
+                <button
+                  type="button"
+                  className="font-semibold text-(--color-primary)"
+                  onClick={selectAllVisible}
+                >
+                  انتخاب همه نتایج ({tasks.length.toLocaleString("fa-IR")})
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-(--color-muted)"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                پاک کردن انتخاب
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                disabled={bulkPending}
+                onValueChange={(value) =>
+                  runBulkAction(
+                    { action: "assign", assigneeId: value === "none" ? null : value },
+                    "مسئول وظایف تغییر کرد.",
+                  )
+                }
+              >
+                <SelectTrigger className="h-9 w-36 bg-white"><SelectValue placeholder="تغییر مسئول" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">بدون مسئول</SelectItem>
+                  {(membersData?.members ?? []).map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>{member.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                disabled={bulkPending}
+                onValueChange={(value) =>
+                  runBulkAction({ action: "priority", priority: value }, "اولویت وظایف تغییر کرد.")
+                }
+              >
+                <SelectTrigger className="h-9 w-32 bg-white"><SelectValue placeholder="اولویت" /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedProjectId && (
+                <Select
+                  disabled={bulkPending}
+                  onValueChange={(statusId) =>
+                    runBulkAction({ action: "status", statusId }, "وضعیت وظایف تغییر کرد.")
+                  }
+                >
+                  <SelectTrigger className="h-9 w-36 bg-white"><SelectValue placeholder="تغییر وضعیت" /></SelectTrigger>
+                  <SelectContent>
+                    {(selectedProjectStatuses?.statuses ?? []).map((status) => (
+                      <SelectItem key={status.id} value={status.id}>{status.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={bulkPending}
+                onClick={() => runBulkAction({ action: "complete" }, "وظایف تکمیل شدند.")}
+              >
+                تکمیل
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={bulkPending}
+                onClick={() => runBulkAction({ action: "reopen" }, "وظایف دوباره باز شدند.")}
+              >
+                بازکردن
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                loading={bulkPending}
+                onClick={() => runBulkAction({ action: "delete" }, "وظایف حذف شدند.")}
+              >
+                حذف
+              </Button>
+            </div>
+          </div>
+
+          {!selectedProjectId && selectedProjectIds.length > 1 && (
+            <p className="mt-2 text-[11px] text-(--color-muted)">
+              برای تغییر ستون وضعیت، فقط وظایف یک پروژه را انتخاب کنید.
+            </p>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
@@ -110,7 +276,12 @@ function TasksPageInner() {
           {tasks.map((t) => {
             const overdue = t.dueDate && !t.statusIsDone && new Date(t.dueDate).getTime() < new Date().getTime();
             return (
-              <div key={t.id} className="flex items-center gap-3 rounded-xl border border-(--color-border) bg-white p-3">
+              <div key={t.id} className={`flex items-center gap-3 rounded-xl border bg-white p-3 ${selectedIds.has(t.id) ? "border-(--color-primary) ring-1 ring-(--color-primary)/10" : "border-(--color-border)"}`}>
+                <Checkbox
+                  checked={selectedIds.has(t.id)}
+                  onCheckedChange={(value) => toggleSelection(t.id, Boolean(value))}
+                  aria-label="انتخاب وظیفه برای عملیات گروهی"
+                />
                 <Checkbox checked={t.statusIsDone} onCheckedChange={(v) => toggleComplete(t.id, Boolean(v))} />
                 <button onClick={() => setActiveTaskId(t.id)} className="min-w-0 flex-1 text-right">
                   <p className={`truncate text-[13px] font-medium ${t.statusIsDone ? "text-slate-400 line-through" : "text-(--color-text)"}`}>{t.title}</p>
