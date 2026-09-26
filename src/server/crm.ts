@@ -5,20 +5,26 @@ import {
   crmCompanies,
   crmContacts,
   crmDeals,
+  crmDealProducts,
   crmLeads,
+  crmProducts,
   crmPipelines,
   crmPipelineStages,
   users,
 } from "@/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type {
   CreateCustomerInput,
   CreateDealInput,
   CreateLeadInput,
   UpdateDealInput,
   UpdateLeadInput,
+  CreateProductInput,
+  UpdateProductInput,
+  ConvertDealToProjectInput,
 } from "@/lib/validation/crm";
-import { NotFoundError } from "@/lib/api-response";
+import { ApiError, NotFoundError } from "@/lib/api-response";
+import { createProject } from "@/server/projects";
 
 const DEFAULT_STAGES = [
   { name: "سرنخ جدید", color: "#94a3b8", probability: 10, position: 0 },
@@ -94,6 +100,7 @@ export async function listDeals(workspaceId: string, pipelineId?: string) {
       source: crmDeals.source,
       expectedCloseAt: crmDeals.expectedCloseAt,
       lostReason: crmDeals.lostReason,
+      projectId: crmDeals.projectId,
       createdAt: crmDeals.createdAt,
       companyName: crmCompanies.name,
       contactName: crmContacts.name,
@@ -143,6 +150,11 @@ export async function getCrmOverview(workspaceId: string) {
       openDeals: openDeals.length,
       openValue: openDeals.reduce((sum, deal) => sum + Number(deal.value ?? 0), 0),
       wonDeals: wonDeals.length,
+      wonValue: wonDeals.reduce((sum, deal) => sum + Number(deal.value ?? 0), 0),
+      weightedForecast: openDeals.reduce((sum, deal) => {
+        const stage = stages.find((item) => item.id === deal.stageId);
+        return sum + Math.round(Number(deal.value ?? 0) * ((stage?.probability ?? 0) / 100));
+      }, 0),
       conversionRate: closed > 0 ? Math.round((wonDeals.length / closed) * 100) : 0,
     },
   };
@@ -455,4 +467,173 @@ export async function convertLeadToDeal(workspaceId: string, userId: string, lea
 
     return { deal, contact, companyId };
   });
+}
+
+
+export async function listProducts(workspaceId: string) {
+  return db
+    .select()
+    .from(crmProducts)
+    .where(eq(crmProducts.workspaceId, workspaceId))
+    .orderBy(desc(crmProducts.updatedAt));
+}
+
+export async function createProduct(workspaceId: string, input: CreateProductInput) {
+  const [product] = await db
+    .insert(crmProducts)
+    .values({
+      workspaceId,
+      name: input.name,
+      sku: input.sku || null,
+      unitPrice: input.unitPrice,
+      description: input.description || null,
+    })
+    .returning();
+
+  return product;
+}
+
+export async function updateProduct(workspaceId: string, productId: string, input: UpdateProductInput) {
+  const rows = await db
+    .select({ id: crmProducts.id })
+    .from(crmProducts)
+    .where(and(eq(crmProducts.id, productId), eq(crmProducts.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!rows[0]) throw new NotFoundError("محصول یا خدمت یافت نشد.");
+
+  const patch: Partial<typeof crmProducts.$inferInsert> = { updatedAt: new Date() };
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.sku !== undefined) patch.sku = input.sku || null;
+  if (input.unitPrice !== undefined) patch.unitPrice = input.unitPrice;
+  if (input.description !== undefined) patch.description = input.description || null;
+  if (input.isActive !== undefined) patch.isActive = input.isActive;
+
+  const [product] = await db
+    .update(crmProducts)
+    .set(patch)
+    .where(eq(crmProducts.id, productId))
+    .returning();
+
+  return product;
+}
+
+export async function getDealProducts(workspaceId: string, dealId: string) {
+  return db
+    .select({
+      productId: crmDealProducts.productId,
+      name: crmProducts.name,
+      sku: crmProducts.sku,
+      quantity: crmDealProducts.quantity,
+      unitPrice: crmDealProducts.unitPrice,
+    })
+    .from(crmDealProducts)
+    .innerJoin(crmProducts, eq(crmProducts.id, crmDealProducts.productId))
+    .innerJoin(crmDeals, eq(crmDeals.id, crmDealProducts.dealId))
+    .where(and(eq(crmDealProducts.dealId, dealId), eq(crmDeals.workspaceId, workspaceId)));
+}
+
+export async function replaceDealProducts(
+  workspaceId: string,
+  dealId: string,
+  items: { productId: string; quantity: number; unitPrice?: number }[],
+) {
+  const deals = await db
+    .select({ id: crmDeals.id })
+    .from(crmDeals)
+    .where(and(eq(crmDeals.id, dealId), eq(crmDeals.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!deals[0]) throw new NotFoundError("فرصت فروش یافت نشد.");
+
+  const productIds = Array.from(new Set(items.map((item) => item.productId)));
+  const validProducts = productIds.length
+    ? await db
+        .select({ id: crmProducts.id, unitPrice: crmProducts.unitPrice })
+        .from(crmProducts)
+        .where(and(eq(crmProducts.workspaceId, workspaceId), inArray(crmProducts.id, productIds)))
+    : [];
+
+  if (validProducts.length !== productIds.length) {
+    throw new ApiError("یک یا چند محصول معتبر نیست.", 422);
+  }
+
+  const priceById = new Map(validProducts.map((item) => [item.id, item.unitPrice]));
+
+  await db.transaction(async (tx) => {
+    await tx.delete(crmDealProducts).where(eq(crmDealProducts.dealId, dealId));
+    if (items.length > 0) {
+      await tx.insert(crmDealProducts).values(
+        items.map((item) => ({
+          dealId,
+          productId: item.productId,
+          quantity: Math.max(1, item.quantity),
+          unitPrice: item.unitPrice ?? priceById.get(item.productId) ?? 0,
+        })),
+      );
+    }
+  });
+
+  return getDealProducts(workspaceId, dealId);
+}
+
+export async function convertDealToProject(
+  workspaceId: string,
+  userId: string,
+  dealId: string,
+  input: ConvertDealToProjectInput,
+) {
+  const rows = await db
+    .select({
+      id: crmDeals.id,
+      title: crmDeals.title,
+      status: crmDeals.status,
+      value: crmDeals.value,
+      ownerId: crmDeals.ownerId,
+      projectId: crmDeals.projectId,
+      companyName: crmCompanies.name,
+      contactName: crmContacts.name,
+    })
+    .from(crmDeals)
+    .leftJoin(crmCompanies, eq(crmCompanies.id, crmDeals.companyId))
+    .leftJoin(crmContacts, eq(crmContacts.id, crmDeals.contactId))
+    .where(and(eq(crmDeals.id, dealId), eq(crmDeals.workspaceId, workspaceId)))
+    .limit(1);
+
+  const deal = rows[0];
+  if (!deal) throw new NotFoundError("فرصت فروش یافت نشد.");
+  if (deal.status !== "won") throw new ApiError("فقط فرصت فروش برنده‌شده را می‌توان به پروژه تبدیل کرد.", 409);
+  if (deal.projectId) throw new ApiError("برای این فرصت فروش قبلاً پروژه ساخته شده است.", 409);
+
+  const customerName = deal.companyName || deal.contactName || "مشتری";
+  const memberIds = Array.from(new Set([...(input.memberIds ?? []), ...(deal.ownerId ? [deal.ownerId] : [])]));
+
+  const project = await createProject(workspaceId, userId, {
+    name: input.name || deal.title,
+    description:
+      input.description ||
+      `پروژه ایجادشده از فرصت فروش «${deal.title}» برای ${customerName}. ارزش فروش: ${Number(deal.value ?? 0).toLocaleString("fa-IR")} تومان.`,
+    priority: input.priority,
+    color: input.color,
+    startDate: new Date().toISOString(),
+    dueDate: input.dueDate ?? null,
+    memberIds,
+  });
+
+  await db
+    .update(crmDeals)
+    .set({ projectId: project.id, updatedAt: new Date() })
+    .where(eq(crmDeals.id, deal.id));
+
+  await db.insert(crmActivities).values({
+    workspaceId,
+    dealId: deal.id,
+    type: "note",
+    title: "تبدیل فرصت فروش به پروژه",
+    note: `پروژه «${project.name}» از این فرصت فروش ساخته شد.`,
+    createdBy: userId,
+    completedAt: new Date(),
+  });
+
+  return project;
 }
