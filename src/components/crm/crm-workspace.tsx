@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
 import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
+import { CrmPriorityView } from "@/components/crm/crm-priority-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
 import { CrmImportDialog } from "@/components/crm/crm-import-dialog";
 import {
@@ -116,7 +117,7 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers" | "activities" | "products" | "customFields";
+type Tab = "priority" | "pipeline" | "leads" | "customers" | "activities" | "products" | "customFields";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -135,7 +136,7 @@ function getErrorMessage(error: unknown) {
 
 export function CrmWorkspace() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("pipeline");
+  const [tab, setTab] = useState<Tab>("priority");
   const [leadOpen, setLeadOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [dealOpen, setDealOpen] = useState(false);
@@ -248,6 +249,7 @@ export function CrmWorkspace() {
       )}
 
       <div className="flex w-fit gap-1 rounded-xl border border-(--color-border) bg-white p-1">
+        <TabButton active={tab === "priority"} onClick={() => setTab("priority")}>اولویت امروز</TabButton>
         <TabButton active={tab === "pipeline"} onClick={() => setTab("pipeline")}>Pipeline فروش</TabButton>
         <TabButton active={tab === "leads"} onClick={() => setTab("leads")}>سرنخ‌ها</TabButton>
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
@@ -255,6 +257,8 @@ export function CrmWorkspace() {
         <TabButton active={tab === "products"} onClick={() => setTab("products")}>محصولات / خدمات</TabButton>
         <TabButton active={tab === "customFields"} onClick={() => setTab("customFields")}>فیلدهای سفارشی</TabButton>
       </div>
+
+      {tab === "priority" && <CrmPriorityView />}
 
       {tab === "pipeline" && (
         <PipelineView
