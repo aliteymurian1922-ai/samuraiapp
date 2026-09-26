@@ -59,14 +59,6 @@ function TasksPageInner() {
   const selectedProjectId = selectedProjectIds.length === 1 ? selectedProjectIds[0] : undefined;
   const { data: selectedProjectStatuses } = useProjectStatuses(selectedProjectId);
 
-  useEffect(() => {
-    const visible = new Set(tasks.map((task) => task.id));
-    setSelectedIds((current) => {
-      const next = new Set([...current].filter((id) => visible.has(id)));
-      if (next.size === current.size && [...next].every((id) => current.has(id))) return current;
-      return next;
-    });
-  }, [tasks]);
 
   async function toggleComplete(taskId: string, completed: boolean) {
     try {
@@ -127,23 +119,31 @@ function TasksPageInner() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[160px] flex-1">
           <Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <Input placeholder="جستجوی وظیفه..." value={search} onChange={(e) => setSearch(e.target.value)} className="pr-9" />
+          <Input
+            placeholder="جستجوی وظیفه..."
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setSelectedIds(new Set());
+            }}
+            className="pr-9"
+          />
         </div>
-        <Select value={projectId} onValueChange={setProjectId}>
+        <Select value={projectId} onValueChange={(value) => { setProjectId(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-40"><SelectValue placeholder="پروژه" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه پروژه‌ها</SelectItem>
             {(projectsData?.projects ?? []).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={assigneeId} onValueChange={setAssigneeId}>
+        <Select value={assigneeId} onValueChange={(value) => { setAssigneeId(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-36"><SelectValue placeholder="مسئول" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اعضا</SelectItem>
             {(membersData?.members ?? []).map((m) => <SelectItem key={m.userId} value={m.userId}>{m.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={priority} onValueChange={setPriority}>
+        <Select value={priority} onValueChange={(value) => { setPriority(value); setSelectedIds(new Set()); }}>
           <SelectTrigger className="w-32"><SelectValue placeholder="اولویت" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اولویت‌ها</SelectItem>
@@ -151,7 +151,7 @@ function TasksPageInner() {
           </SelectContent>
         </Select>
         <button
-          onClick={() => setOnlyOverdue((v) => !v)}
+          onClick={() => { setOnlyOverdue((v) => !v); setSelectedIds(new Set()); }}
           className={`rounded-lg px-3 py-2 text-xs font-medium transition ${onlyOverdue ? "bg-(--color-danger) text-white" : "border border-(--color-border) bg-white text-(--color-muted)"}`}
         >
           فقط عقب‌افتاده
