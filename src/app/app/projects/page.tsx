@@ -14,7 +14,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { formatJalaliDate } from "@/lib/date";
 import { toPersianDigits } from "@/lib/utils";
 import { RISK_LEVEL_LABEL_FA } from "@/lib/risk";
-import { FolderKanban, Plus, Search } from "lucide-react";
+import { FolderKanban, Plus, Search, Layers3 } from "lucide-react";
+import { ProjectTemplatesDialog } from "@/components/projects/project-templates-dialog";
 
 const STATUS_LABELS: Record<string, string> = { active: "فعال", on_hold: "متوقف‌شده", completed: "تکمیل‌شده", archived: "بایگانی‌شده" };
 const PRIORITY_LABELS: Record<string, string> = { critical: "بحرانی", high: "بالا", medium: "متوسط", low: "پایین" };
@@ -24,6 +25,7 @@ export default function ProjectsPage() {
   const { setCreateProjectOpen } = useUIStore();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const projects = useMemo(() => {
     const list = data?.projects ?? [];
@@ -41,7 +43,10 @@ export default function ProjectsPage() {
           <h1 className="text-lg font-bold">پروژه‌ها</h1>
           <p className="text-xs text-(--color-muted)">مدیریت و پیگیری همه پروژه‌های Workspace</p>
         </div>
-        <Button onClick={() => setCreateProjectOpen(true)}><Plus className="size-4" /> پروژه جدید</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setTemplatesOpen(true)}><Layers3 className="size-4" /> قالب‌های پروژه</Button>
+          <Button onClick={() => setCreateProjectOpen(true)}><Plus className="size-4" /> پروژه جدید</Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -100,6 +105,7 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
+      <ProjectTemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
     </div>
   );
 }
