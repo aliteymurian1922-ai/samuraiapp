@@ -7,8 +7,7 @@ import { createProjectTemplate, listProjectTemplates } from "@/server/project-te
 
 export async function GET() {
   try {
-    const { workspace, role } = await requireWorkspaceContext();
-    assertCan(role, "project.create");
+    const { workspace } = await requireWorkspaceContext();
     return ok({ templates: await listProjectTemplates(workspace.id) });
   } catch (error) {
     return handleApiError(error);
