@@ -67,3 +67,36 @@ export const createAttachmentSchema = z.object({
   fileUrl: z.string().trim().url("لینک معتبر نیست."),
   fileType: z.string().trim().max(80).optional(),
 });
+
+
+export const bulkTaskActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("assign"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+    assigneeId: z.string().uuid().nullable(),
+  }),
+  z.object({
+    action: z.literal("priority"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+    priority: z.enum(priorityValues),
+  }),
+  z.object({
+    action: z.literal("status"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+    statusId: z.string().uuid(),
+  }),
+  z.object({
+    action: z.literal("complete"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+  }),
+  z.object({
+    action: z.literal("reopen"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+  }),
+  z.object({
+    action: z.literal("delete"),
+    taskIds: z.array(z.string().uuid()).min(1).max(100),
+  }),
+]);
+
+export type BulkTaskActionInput = z.infer<typeof bulkTaskActionSchema>;
