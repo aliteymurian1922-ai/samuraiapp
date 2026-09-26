@@ -31,6 +31,7 @@ export const SECONDARY_NAV = [
 
 export const MOBILE_NAV = [
   { href: "/app/dashboard", label: "داشبورد", icon: LayoutDashboard },
+  { href: "/app/crm", label: "فروش", icon: CrmIcon },
   { href: "/app/tasks", label: "وظایف", icon: ListChecks },
   { href: "/app/projects", label: "پروژه‌ها", icon: FolderKanban },
   { href: "/app/ai", label: "AI", icon: Sparkles },
