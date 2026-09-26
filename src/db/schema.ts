@@ -291,6 +291,30 @@ export const crmActivities = pgTable("crm_activities", {
   index("crm_activities_contact_idx").on(t.contactId),
 ]);
 
+export const crmProducts = pgTable("crm_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 180 }).notNull(),
+  sku: varchar("sku", { length: 80 }),
+  unitPrice: bigint("unit_price", { mode: "number" }).notNull().default(0),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_products_workspace_idx").on(t.workspaceId),
+]);
+
+export const crmDealProducts = pgTable("crm_deal_products", {
+  dealId: uuid("deal_id").notNull().references(() => crmDeals.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => crmProducts.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull().default(1),
+  unitPrice: bigint("unit_price", { mode: "number" }).notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.dealId, t.productId] }),
+  index("crm_deal_products_product_idx").on(t.productId),
+]);
+
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
