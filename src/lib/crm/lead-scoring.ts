@@ -1,4 +1,5 @@
 export type LeadScoreBand = "hot" | "warm" | "cold" | "inactive" | "converted";
+export type LeadPriorityBand = "urgent" | "high" | "normal" | "low" | "done";
 
 export type LeadScoreInput = {
   status: "new" | "contacted" | "qualified" | "unqualified" | "converted";
@@ -23,6 +24,9 @@ export type LeadScoreInput = {
 export type LeadScoreResult = {
   score: number;
   band: LeadScoreBand;
+  priorityScore: number;
+  priorityBand: LeadPriorityBand;
+  recommendedAction: string;
   reasons: string[];
   breakdown: {
     status: number;
@@ -43,6 +47,9 @@ export function calculateLeadScore(input: LeadScoreInput): LeadScoreResult {
     return {
       score: 100,
       band: "converted",
+      priorityScore: 0,
+      priorityBand: "done",
+      recommendedAction: "این سرنخ تبدیل شده و به اقدام فروش دیگری نیاز ندارد.",
       reasons: ["این سرنخ قبلاً به مشتری و فرصت فروش تبدیل شده است."],
       breakdown: {
         status: 30,
@@ -59,6 +66,9 @@ export function calculateLeadScore(input: LeadScoreInput): LeadScoreResult {
     return {
       score: 0,
       band: "inactive",
+      priorityScore: 0,
+      priorityBand: "done",
+      recommendedAction: "این سرنخ از صف پیگیری فعال خارج شده است.",
       reasons: ["این سرنخ در وضعیت نامناسب قرار دارد."],
       breakdown: {
         status: 0,
@@ -171,9 +181,54 @@ export function calculateLeadScore(input: LeadScoreInput): LeadScoreResult {
     score >= 50 ? "warm" :
     "cold";
 
+  const daysToFollowUp = input.nextFollowUpAt
+    ? (new Date(input.nextFollowUpAt).getTime() - now.getTime()) / 86_400_000
+    : null;
+
+  let urgencyPoints = 0;
+  let recommendedAction = "اطلاعات سرنخ را کامل کنید و یک تماس اولیه ثبت کنید.";
+
+  if (input.overdueFollowUps > 0) {
+    urgencyPoints = Math.min(60, 50 + (input.overdueFollowUps - 1) * 5);
+    recommendedAction = "پیگیری عقب‌افتاده را امروز انجام دهید و نتیجه را ثبت کنید.";
+  } else if (daysToFollowUp !== null && daysToFollowUp <= 1) {
+    urgencyPoints = 30;
+    recommendedAction = "پیگیری برنامه‌ریزی‌شده را امروز انجام دهید.";
+  } else if (daysToFollowUp !== null && daysToFollowUp <= 3) {
+    urgencyPoints = 22;
+    recommendedAction = "برای پیگیری نزدیک آماده شوید و هدف تماس را مشخص کنید.";
+  } else if (!input.nextFollowUpAt) {
+    urgencyPoints = 20;
+    recommendedAction = "برای این سرنخ اقدام بعدی و زمان پیگیری تعیین کنید.";
+  } else if (input.completedActivities === 0) {
+    urgencyPoints = 14;
+    recommendedAction = "پیش از موعد بعدی، اولین تعامل با سرنخ را ثبت کنید.";
+  } else {
+    urgencyPoints = 8;
+    recommendedAction = "پیگیری برنامه‌ریزی‌شده را در موعد ثبت‌شده انجام دهید.";
+  }
+
+  if (staleDays > 30 && input.overdueFollowUps === 0) {
+    urgencyPoints += 8;
+    recommendedAction = "ارزش ادامه پیگیری را با یک تماس بازفعال‌سازی بررسی کنید.";
+  }
+
+  const priorityScore = Math.max(
+    0,
+    Math.min(100, Math.round(score * 0.65 + urgencyPoints)),
+  );
+  const priorityBand: LeadPriorityBand =
+    priorityScore >= 75 ? "urgent" :
+    priorityScore >= 58 ? "high" :
+    priorityScore >= 35 ? "normal" :
+    "low";
+
   return {
     score,
     band,
+    priorityScore,
+    priorityBand,
+    recommendedAction,
     reasons: reasons.slice(0, 5),
     breakdown: {
       status: statusPoints,
