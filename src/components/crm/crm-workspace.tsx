@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
 import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
+import { CrmAutomationsView } from "@/components/crm/crm-automations-view";
 
 type Deal = {
   id: string;
@@ -97,7 +98,7 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers" | "activities" | "products";
+type Tab = "pipeline" | "leads" | "customers" | "activities" | "products" | "automations";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -229,6 +230,7 @@ export function CrmWorkspace() {
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
         <TabButton active={tab === "activities"} onClick={() => setTab("activities")}>پیگیری‌ها</TabButton>
         <TabButton active={tab === "products"} onClick={() => setTab("products")}>محصولات / خدمات</TabButton>
+        <TabButton active={tab === "automations"} onClick={() => setTab("automations")}>اتوماسیون</TabButton>
       </div>
 
       {tab === "pipeline" && (
@@ -264,6 +266,7 @@ export function CrmWorkspace() {
 
       {tab === "activities" && <CrmActivitiesView />}
       {tab === "products" && <CrmProductsView />}
+      {tab === "automations" && <CrmAutomationsView />}
 
       <LeadDialog
         open={leadOpen}
