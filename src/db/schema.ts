@@ -150,6 +150,7 @@ export const memberships = pgTable("memberships", {
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: membershipRoleEnum("role").notNull().default("member"),
+  weeklyCapacityMinutes: integer("weekly_capacity_minutes").notNull().default(2400),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("memberships_workspace_user_idx").on(t.workspaceId, t.userId),
