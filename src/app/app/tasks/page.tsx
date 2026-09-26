@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useSearchParams } from "next/navigation";
 import { useTasks, useProjects, useMembers } from "@/hooks/use-data";
 import { useUIStore } from "@/stores/ui-store";
@@ -14,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatJalaliDate } from "@/lib/date";
 import { Plus, ListChecks, Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { api } from "@/lib/api-client";
+import { api, ClientApiError } from "@/lib/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 
 const PRIORITY_LABELS: Record<string, string> = { critical: "بحرانی", high: "بالا", medium: "متوسط", low: "پایین" };
@@ -47,9 +48,13 @@ function TasksPageInner() {
   const tasks = useMemo(() => data?.tasks ?? [], [data]);
 
   async function toggleComplete(taskId: string, completed: boolean) {
-    await api.patch(`/api/tasks/${taskId}`, { completed });
-    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    try {
+      await api.patch(`/api/tasks/${taskId}`, { completed });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "تغییر وضعیت وظیفه انجام نشد.");
+    }
   }
 
   return (

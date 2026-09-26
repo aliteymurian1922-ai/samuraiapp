@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
+import { ApiError, NotFoundError } from "@/lib/api-response";
 
 export type TaskFilters = {
   projectId?: string;
@@ -153,6 +154,39 @@ export async function createTask(workspaceId: string, creatorId: string, input: 
   return task;
 }
 
+export async function getUnresolvedBlockingDependencies(taskId: string) {
+  return db
+    .select({
+      id: taskDependencies.id,
+      dependsOnTaskId: taskDependencies.dependsOnTaskId,
+      title: tasks.title,
+    })
+    .from(taskDependencies)
+    .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOnTaskId))
+    .innerJoin(taskStatuses, eq(taskStatuses.id, tasks.statusId))
+    .where(
+      and(
+        eq(taskDependencies.taskId, taskId),
+        eq(taskDependencies.type, "blocked_by"),
+        eq(taskStatuses.isDone, false),
+        isNull(tasks.deletedAt),
+      ),
+    );
+}
+
+export async function assertTaskCanComplete(taskId: string) {
+  const blockers = await getUnresolvedBlockingDependencies(taskId);
+  if (blockers.length === 0) return;
+
+  const names = blockers.slice(0, 3).map((item) => `«${item.title}»`).join("، ");
+  const more = blockers.length > 3 ? ` و ${blockers.length - 3} مورد دیگر` : "";
+
+  throw new ApiError(
+    `این وظیفه هنوز مسدود است. ابتدا ${names}${more} را تکمیل کنید.`,
+    409,
+  );
+}
+
 export async function updateTask(taskId: string, input: UpdateTaskInput) {
   const patch: Partial<typeof tasks.$inferInsert> = { updatedAt: new Date() };
 
@@ -180,11 +214,18 @@ export async function updateTask(taskId: string, input: UpdateTaskInput) {
       .where(eq(taskStatuses.id, input.statusId))
       .limit(1);
     if (statusRows[0]) {
+      if (statusRows[0].isDone) {
+        await assertTaskCanComplete(taskId);
+      }
       patch.completedAt = statusRows[0].isDone ? new Date() : null;
     }
   }
 
   if (input.completed !== undefined && currentTask) {
+    if (input.completed) {
+      await assertTaskCanComplete(taskId);
+    }
+
     const targetRows = await db
       .select({ id: taskStatuses.id })
       .from(taskStatuses)
@@ -253,7 +294,59 @@ export async function deleteComment(id: string) {
 }
 
 export async function addDependency(taskId: string, dependsOnTaskId: string, type: "blocks" | "blocked_by") {
-  const [dep] = await db.insert(taskDependencies).values({ taskId, dependsOnTaskId, type }).returning();
+  if (taskId === dependsOnTaskId) {
+    throw new ApiError("یک وظیفه نمی‌تواند به خودش وابسته باشد.", 400);
+  }
+
+  const relatedTasks = await db
+    .select({
+      id: tasks.id,
+      workspaceId: tasks.workspaceId,
+      projectId: tasks.projectId,
+    })
+    .from(tasks)
+    .where(inArray(tasks.id, [taskId, dependsOnTaskId]));
+
+  const current = relatedTasks.find((task) => task.id === taskId);
+  const target = relatedTasks.find((task) => task.id === dependsOnTaskId);
+
+  if (!current || !target) {
+    throw new NotFoundError("یکی از وظایف وابستگی یافت نشد.");
+  }
+
+  if (current.workspaceId !== target.workspaceId || current.projectId !== target.projectId) {
+    throw new ApiError("وابستگی فقط بین وظایف یک پروژه قابل تعریف است.", 400);
+  }
+
+  if (type === "blocked_by") {
+    const cycleRows = await db.execute(sql`
+      with recursive dependency_chain(depends_on_task_id) as (
+        select ${taskDependencies.dependsOnTaskId}
+        from ${taskDependencies}
+        where ${taskDependencies.taskId} = ${dependsOnTaskId}
+          and ${taskDependencies.type} = 'blocked_by'
+        union
+        select td.depends_on_task_id
+        from task_dependencies td
+        inner join dependency_chain dc on td.task_id = dc.depends_on_task_id
+        where td.type = 'blocked_by'
+      )
+      select 1
+      from dependency_chain
+      where depends_on_task_id = ${taskId}
+      limit 1
+    `);
+
+    if (cycleRows.rows.length > 0) {
+      throw new ApiError("این وابستگی یک حلقه ایجاد می‌کند و قابل ثبت نیست.", 409);
+    }
+  }
+
+  const [dep] = await db
+    .insert(taskDependencies)
+    .values({ taskId, dependsOnTaskId, type })
+    .returning();
+
   return dep;
 }
 
