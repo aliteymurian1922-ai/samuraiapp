@@ -34,7 +34,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (input.action === "complete") {
+    const completedInBulk =
+      input.action === "complete" ||
+      (input.action === "status" && "completed" in result && result.completed === true);
+
+    if (completedInBulk) {
       for (const taskId of input.taskIds) {
         const nextTask = await createNextRecurringTask(workspace.id, taskId, user.id);
         if (nextTask) {
