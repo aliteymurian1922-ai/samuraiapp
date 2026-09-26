@@ -22,6 +22,12 @@ export const inviteMemberSchema = z.object({
   role: z.enum(["admin", "manager", "member", "viewer"]).default("member"),
 });
 
-export const updateMemberRoleSchema = z.object({
-  role: z.enum(["owner", "admin", "manager", "member", "viewer"]),
-});
+export const updateMemberSchema = z.object({
+  role: z.enum(["owner", "admin", "manager", "member", "viewer"]).optional(),
+  weeklyCapacityMinutes: z.number().int().min(60).max(10080).optional(),
+}).refine(
+  (value) => value.role !== undefined || value.weeklyCapacityMinutes !== undefined,
+  "حداقل یک مقدار برای به‌روزرسانی لازم است.",
+);
+
+export const updateMemberRoleSchema = updateMemberSchema;
