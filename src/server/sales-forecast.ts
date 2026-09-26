@@ -116,6 +116,17 @@ export async function buildSalesForecast(workspaceId: string) {
             0
           )::bigint
         `,
+        weightedDueThisMonth: sql<number>`
+          coalesce(
+            sum(round(${crmDeals.value} * ${crmPipelineStages.probability} / 100.0))
+              filter (
+                where ${crmDeals.status} = 'open'
+                  and ${crmDeals.expectedCloseAt} >= date_trunc('month', now())
+                  and ${crmDeals.expectedCloseAt} < date_trunc('month', now()) + interval '1 month'
+              ),
+            0
+          )::bigint
+        `,
         wonValueThisMonth: sql<number>`
           coalesce(
             sum(${crmDeals.value})
