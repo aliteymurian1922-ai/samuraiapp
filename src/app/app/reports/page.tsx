@@ -19,6 +19,7 @@ import type { ManagementReport } from "@/server/reports";
 import type { SalesForecastReport } from "@/server/sales-forecast";
 import { formatJalaliDate } from "@/lib/date";
 import { BarChart3, FileText } from "lucide-react";
+import { SalesTargetsPanel } from "@/components/reports/sales-targets-panel";
 
 export default function ReportsPage() {
   return (
@@ -146,6 +147,8 @@ function SalesForecastTab() {
           <SalesMetric label="Deal باز" value={toPersianDigits(r.summary.openDeals)} />
         </div>
       </Card>
+
+      <SalesTargetsPanel report={r} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
