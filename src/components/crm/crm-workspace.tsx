@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ type Deal = {
   source: string | null;
   expectedCloseAt: string | null;
   lostReason: string | null;
+  projectId: string | null;
   createdAt: string;
   companyName: string | null;
   contactName: string | null;
@@ -176,6 +178,19 @@ export function CrmWorkspace() {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  const createProjectFromDeal = useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ project: { id: string; name: string } }>(`/api/crm/deals/${id}/project`, {}),
+    onSuccess: async ({ project }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crm", "overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+      toast.success(`پروژه «${project.name}» ساخته شد.`);
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
   const metrics = overview.data?.metrics;
 
   return (
@@ -223,6 +238,8 @@ export function CrmWorkspace() {
           onMove={(id, stageId) => moveDeal.mutate({ id, stageId })}
           moving={moveDeal.isPending}
           onCreate={() => setDealOpen(true)}
+          onCreateProject={(id) => createProjectFromDeal.mutate(id)}
+          creatingProject={createProjectFromDeal.isPending}
         />
       )}
 
@@ -301,12 +318,16 @@ function PipelineView({
   onMove,
   moving,
   onCreate,
+  onCreateProject,
+  creatingProject,
 }: {
   overview?: Overview;
   isLoading: boolean;
   onMove: (id: string, stageId: string) => void;
   moving: boolean;
   onCreate: () => void;
+  onCreateProject: (id: string) => void;
+  creatingProject: boolean;
 }) {
   if (isLoading) {
     return <div className="flex gap-3 overflow-hidden">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-96 min-w-[270px] flex-1" />)}</div>;
@@ -376,6 +397,29 @@ function PipelineView({
                           <option key={target.id} value={target.id}>{target.name}</option>
                         ))}
                       </select>
+
+                      {stage.isWon && (
+                        <div className="mt-2">
+                          {deal.projectId ? (
+                            <Link
+                              href={`/app/projects/${deal.projectId}`}
+                              className="flex h-8 items-center justify-center rounded-lg bg-emerald-50 px-2 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                            >
+                              مشاهده پروژه اجرایی
+                            </Link>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="w-full"
+                              loading={creatingProject}
+                              onClick={() => onCreateProject(deal.id)}
+                            >
+                              ساخت پروژه اجرایی
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </Card>
                   ))
                 )}
