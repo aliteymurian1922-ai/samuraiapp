@@ -7,9 +7,21 @@ import { hashPassword } from "@/lib/auth/password";
 import { createUserSession } from "@/lib/auth/session";
 import { ok, fail, handleApiError, ApiError } from "@/lib/api-response";
 import { logAudit } from "@/server/activity";
+import { enforceRateLimit, getRequestIp } from "@/lib/security/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getRequestIp(req);
+    if (ip) {
+      await enforceRateLimit({
+        scope: "auth.register.ip",
+        identifier: ip,
+        maxAttempts: 8,
+        windowMs: 60 * 60 * 1000,
+        blockMs: 60 * 60 * 1000,
+      });
+    }
+
     const body = await req.json();
     const input = registerSchema.parse(body);
 
