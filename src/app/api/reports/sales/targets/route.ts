@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireWorkspaceContext } from "@/lib/auth/context";
-import { assertCan } from "@/lib/permissions";
+import { assertCan, can } from "@/lib/permissions";
 import { handleApiError, ok } from "@/lib/api-response";
 import {
   salesTargetMonthSchema,
@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
     const month = salesTargetMonthSchema.parse(rawMonth);
     const targets = await getSalesTargets(workspace.id, month);
 
-    return ok({ targets });
+    return ok({
+      targets,
+      canManage: can(role, "crm.targets.manage"),
+    });
   } catch (error) {
     return handleApiError(error);
   }
