@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
+import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
+import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
 
 type Deal = {
   id: string;
@@ -53,8 +55,12 @@ type Overview = {
     activeLeads: number;
     openDeals: number;
     openValue: number;
+    weightedPipelineValue: number;
     wonDeals: number;
+    wonValue: number;
     conversionRate: number;
+    overdueFollowUps: number;
+    dueTodayFollowUps: number;
   };
 };
 
@@ -89,7 +95,7 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers";
+type Tab = "pipeline" | "leads" | "customers" | "activities" | "products";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -128,6 +134,7 @@ export function CrmWorkspace() {
     queryFn: () => api.get<{ customers: Customer[] }>("/api/crm/customers"),
   });
 
+  const products = useCrmProducts();
   const { data: memberData } = useMembers();
 
   const invalidateCrm = async () => {
@@ -135,6 +142,8 @@ export function CrmWorkspace() {
       queryClient.invalidateQueries({ queryKey: ["crm", "overview"] }),
       queryClient.invalidateQueries({ queryKey: ["crm", "leads"] }),
       queryClient.invalidateQueries({ queryKey: ["crm", "customers"] }),
+      queryClient.invalidateQueries({ queryKey: ["crm", "products"] }),
+      queryClient.invalidateQueries({ queryKey: ["crm", "activities"] }),
     ]);
   };
 
@@ -189,11 +198,13 @@ export function CrmWorkspace() {
           {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-24" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
           <MetricCard label="مشتریان" value={metrics?.customers ?? 0} sub="مخاطب ثبت‌شده" />
           <MetricCard label="سرنخ‌های فعال" value={metrics?.activeLeads ?? 0} sub={`از ${numberFa.format(metrics?.leads ?? 0)} سرنخ`} />
           <MetricCard label="ارزش فرصت‌های باز" value={moneyFa.format(metrics?.openValue ?? 0)} sub="تومان" />
+          <MetricCard label="ارزش وزنی Pipeline" value={moneyFa.format(metrics?.weightedPipelineValue ?? 0)} sub="بر اساس احتمال هر مرحله" />
           <MetricCard label="نرخ برد" value={`${numberFa.format(metrics?.conversionRate ?? 0)}٪`} sub={`${numberFa.format(metrics?.wonDeals ?? 0)} فروش موفق`} />
+          <MetricCard label="پیگیری عقب‌افتاده" value={metrics?.overdueFollowUps ?? 0} sub={`${numberFa.format(metrics?.dueTodayFollowUps ?? 0)} مورد برای امروز`} />
         </div>
       )}
 
@@ -201,6 +212,8 @@ export function CrmWorkspace() {
         <TabButton active={tab === "pipeline"} onClick={() => setTab("pipeline")}>Pipeline فروش</TabButton>
         <TabButton active={tab === "leads"} onClick={() => setTab("leads")}>سرنخ‌ها</TabButton>
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
+        <TabButton active={tab === "activities"} onClick={() => setTab("activities")}>پیگیری‌ها</TabButton>
+        <TabButton active={tab === "products"} onClick={() => setTab("products")}>محصولات / خدمات</TabButton>
       </div>
 
       {tab === "pipeline" && (
@@ -232,6 +245,9 @@ export function CrmWorkspace() {
         />
       )}
 
+      {tab === "activities" && <CrmActivitiesView />}
+      {tab === "products" && <CrmProductsView />}
+
       <LeadDialog
         open={leadOpen}
         onOpenChange={setLeadOpen}
@@ -249,6 +265,7 @@ export function CrmWorkspace() {
         onOpenChange={setDealOpen}
         overview={overview.data}
         customers={customers.data?.customers ?? []}
+        products={products.data?.products ?? []}
         members={memberData?.members ?? []}
         onCreated={invalidateCrm}
       />
@@ -650,6 +667,7 @@ function DealDialog({
   onOpenChange,
   overview,
   customers,
+  products,
   members,
   onCreated,
 }: {
@@ -657,6 +675,7 @@ function DealDialog({
   onOpenChange: (open: boolean) => void;
   overview?: Overview;
   customers: Customer[];
+  products: CrmProduct[];
   members: { userId: string; name: string }[];
   onCreated: () => Promise<void>;
 }) {
@@ -682,6 +701,8 @@ function DealDialog({
         ownerId: String(form.get("ownerId") || "") || null,
         source: String(form.get("source") || "") || null,
         expectedCloseAt: date ? new Date(date).toISOString() : null,
+        productId: String(form.get("productId") || "") || null,
+        quantity: Number(form.get("quantity") || 1),
       });
       await onCreated();
       toast.success("فرصت فروش ایجاد شد.");
@@ -723,6 +744,19 @@ function DealDialog({
                 {members.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
               </NativeSelect>
             </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="محصول / خدمت">
+              <NativeSelect name="productId" defaultValue="">
+                <option value="">بدون محصول مشخص</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} · {moneyFa.format(product.unitPrice)} تومان
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="تعداد"><Input name="quantity" type="number" min="1" max="999" defaultValue="1" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="منبع"><Input name="source" placeholder="سایت، معرفی، تبلیغات..." /></Field>
