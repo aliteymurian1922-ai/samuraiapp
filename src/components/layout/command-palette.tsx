@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import { Command } from "cmdk";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -103,7 +103,7 @@ export function CommandPalette() {
   );
 }
 
-function PaletteItem({ onSelect, icon: Icon, label, shortcut }: { onSelect: () => void; icon: typeof Search; label: string; shortcut?: string }) {
+function PaletteItem({ onSelect, icon: Icon, label, shortcut }: { onSelect: () => void; icon: ElementType<{ className?: string }>; label: string; shortcut?: string }) {
   return (
     <Command.Item
       onSelect={onSelect}

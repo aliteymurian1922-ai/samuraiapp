@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   real,
   boolean,
   jsonb,
@@ -66,6 +67,29 @@ export const meetingParticipantStatusEnum = pgEnum("meeting_participant_status",
   "accepted",
   "declined",
   "attended",
+]);
+
+export const crmLeadStatusEnum = pgEnum("crm_lead_status", [
+  "new",
+  "contacted",
+  "qualified",
+  "unqualified",
+  "converted",
+]);
+
+export const crmDealStatusEnum = pgEnum("crm_deal_status", [
+  "open",
+  "won",
+  "lost",
+]);
+
+export const crmActivityTypeEnum = pgEnum("crm_activity_type", [
+  "call",
+  "message",
+  "email",
+  "meeting",
+  "note",
+  "task",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -130,6 +154,141 @@ export const memberships = pgTable("memberships", {
 }, (t) => [
   uniqueIndex("memberships_workspace_user_idx").on(t.workspaceId, t.userId),
   index("memberships_user_idx").on(t.userId),
+]);
+
+// ---------------------------------------------------------------------------
+// CRM
+// ---------------------------------------------------------------------------
+export const crmCompanies = pgTable("crm_companies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 180 }).notNull(),
+  industry: varchar("industry", { length: 120 }),
+  website: varchar("website", { length: 300 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_companies_workspace_idx").on(t.workspaceId),
+  index("crm_companies_owner_idx").on(t.ownerId),
+]);
+
+export const crmContacts = pgTable("crm_contacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => crmCompanies.id, { onDelete: "set null" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  jobTitle: varchar("job_title", { length: 120 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  source: varchar("source", { length: 80 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_contacts_workspace_idx").on(t.workspaceId),
+  index("crm_contacts_company_idx").on(t.companyId),
+  index("crm_contacts_owner_idx").on(t.ownerId),
+]);
+
+export const crmLeads = pgTable("crm_leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  companyName: varchar("company_name", { length: 180 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  source: varchar("source", { length: 80 }),
+  status: crmLeadStatusEnum("status").notNull().default("new"),
+  estimatedValue: bigint("estimated_value", { mode: "number" }),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  convertedAt: timestamp("converted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_leads_workspace_idx").on(t.workspaceId),
+  index("crm_leads_status_idx").on(t.workspaceId, t.status),
+  index("crm_leads_owner_idx").on(t.ownerId),
+]);
+
+export const crmPipelines = pgTable("crm_pipelines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_pipelines_workspace_idx").on(t.workspaceId),
+]);
+
+export const crmPipelineStages = pgTable("crm_pipeline_stages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  pipelineId: uuid("pipeline_id").notNull().references(() => crmPipelines.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 100 }).notNull(),
+  color: varchar("color", { length: 20 }).default("#94a3b8"),
+  position: integer("position").notNull().default(0),
+  probability: integer("probability").notNull().default(0),
+  isWon: boolean("is_won").notNull().default(false),
+  isLost: boolean("is_lost").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_pipeline_stages_pipeline_idx").on(t.pipelineId, t.position),
+  uniqueIndex("crm_pipeline_stages_position_idx").on(t.pipelineId, t.position),
+]);
+
+export const crmDeals = pgTable("crm_deals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  pipelineId: uuid("pipeline_id").notNull().references(() => crmPipelines.id, { onDelete: "cascade" }),
+  stageId: uuid("stage_id").notNull().references(() => crmPipelineStages.id, { onDelete: "restrict" }),
+  companyId: uuid("company_id").references(() => crmCompanies.id, { onDelete: "set null" }),
+  contactId: uuid("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 200 }).notNull(),
+  value: bigint("value", { mode: "number" }).notNull().default(0),
+  status: crmDealStatusEnum("status").notNull().default("open"),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  source: varchar("source", { length: 80 }),
+  expectedCloseAt: timestamp("expected_close_at", { withTimezone: true }),
+  lostReason: varchar("lost_reason", { length: 300 }),
+  wonAt: timestamp("won_at", { withTimezone: true }),
+  lostAt: timestamp("lost_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_deals_workspace_idx").on(t.workspaceId),
+  index("crm_deals_pipeline_stage_idx").on(t.pipelineId, t.stageId),
+  index("crm_deals_owner_idx").on(t.ownerId),
+  index("crm_deals_company_idx").on(t.companyId),
+  index("crm_deals_contact_idx").on(t.contactId),
+]);
+
+export const crmActivities = pgTable("crm_activities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => crmCompanies.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id").references(() => crmContacts.id, { onDelete: "cascade" }),
+  leadId: uuid("lead_id").references(() => crmLeads.id, { onDelete: "cascade" }),
+  dealId: uuid("deal_id").references(() => crmDeals.id, { onDelete: "cascade" }),
+  type: crmActivityTypeEnum("type").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  note: text("note"),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_activities_workspace_idx").on(t.workspaceId, t.createdAt),
+  index("crm_activities_deal_idx").on(t.dealId),
+  index("crm_activities_lead_idx").on(t.leadId),
+  index("crm_activities_contact_idx").on(t.contactId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -429,6 +588,41 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
 export const membershipsRelations = relations(memberships, ({ one }) => ({
   workspace: one(workspaces, { fields: [memberships.workspaceId], references: [workspaces.id] }),
   user: one(users, { fields: [memberships.userId], references: [users.id] }),
+}));
+
+export const crmCompaniesRelations = relations(crmCompanies, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [crmCompanies.workspaceId], references: [workspaces.id] }),
+  owner: one(users, { fields: [crmCompanies.ownerId], references: [users.id] }),
+  contacts: many(crmContacts),
+  deals: many(crmDeals),
+}));
+
+export const crmContactsRelations = relations(crmContacts, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [crmContacts.workspaceId], references: [workspaces.id] }),
+  company: one(crmCompanies, { fields: [crmContacts.companyId], references: [crmCompanies.id] }),
+  owner: one(users, { fields: [crmContacts.ownerId], references: [users.id] }),
+  deals: many(crmDeals),
+}));
+
+export const crmPipelinesRelations = relations(crmPipelines, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [crmPipelines.workspaceId], references: [workspaces.id] }),
+  stages: many(crmPipelineStages),
+  deals: many(crmDeals),
+}));
+
+export const crmPipelineStagesRelations = relations(crmPipelineStages, ({ one, many }) => ({
+  pipeline: one(crmPipelines, { fields: [crmPipelineStages.pipelineId], references: [crmPipelines.id] }),
+  deals: many(crmDeals),
+}));
+
+export const crmDealsRelations = relations(crmDeals, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [crmDeals.workspaceId], references: [workspaces.id] }),
+  pipeline: one(crmPipelines, { fields: [crmDeals.pipelineId], references: [crmPipelines.id] }),
+  stage: one(crmPipelineStages, { fields: [crmDeals.stageId], references: [crmPipelineStages.id] }),
+  company: one(crmCompanies, { fields: [crmDeals.companyId], references: [crmCompanies.id] }),
+  contact: one(crmContacts, { fields: [crmDeals.contactId], references: [crmContacts.id] }),
+  owner: one(users, { fields: [crmDeals.ownerId], references: [users.id] }),
+  activities: many(crmActivities),
 }));
 
 export const projectsRelations = relations(projects, ({ many, one }) => ({
