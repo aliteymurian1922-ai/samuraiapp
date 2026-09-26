@@ -286,6 +286,39 @@ export const crmDeals = pgTable("crm_deals", {
   index("crm_deals_project_idx").on(t.projectId),
 ]);
 
+export const crmCustomFields = pgTable("crm_custom_fields", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  entityType: varchar("entity_type", { length: 20 }).notNull(),
+  name: varchar("name", { length: 120 }).notNull(),
+  fieldType: varchar("field_type", { length: 20 }).notNull(),
+  options: jsonb("options").$type<string[]>().notNull().default([]),
+  isRequired: boolean("is_required").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  position: integer("position").notNull().default(0),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("crm_custom_fields_workspace_entity_idx").on(t.workspaceId, t.entityType, t.isActive, t.position),
+  uniqueIndex("crm_custom_fields_workspace_entity_name_idx").on(t.workspaceId, t.entityType, t.name),
+]);
+
+export const crmCustomFieldValues = pgTable("crm_custom_field_values", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  fieldId: uuid("field_id").notNull().references(() => crmCustomFields.id, { onDelete: "cascade" }),
+  entityType: varchar("entity_type", { length: 20 }).notNull(),
+  entityId: uuid("entity_id").notNull(),
+  value: jsonb("value").$type<string | number | boolean | null>().notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("crm_custom_field_values_unique_idx").on(t.fieldId, t.entityType, t.entityId),
+  index("crm_custom_field_values_entity_idx").on(t.workspaceId, t.entityType, t.entityId),
+]);
+
 export const crmProducts = pgTable("crm_products", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
