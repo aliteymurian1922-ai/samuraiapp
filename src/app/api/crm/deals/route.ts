@@ -5,6 +5,7 @@ import { ok, handleApiError } from "@/lib/api-response";
 import { createDealSchema } from "@/lib/validation/crm";
 import { createDeal, ensureDefaultPipeline, listDeals } from "@/server/crm";
 import { logActivity } from "@/server/activity";
+import { runCrmAutomations } from "@/server/automations";
 
 export async function GET() {
   try {
@@ -33,6 +34,24 @@ export async function POST(req: NextRequest) {
       entityId: deal.id,
       message: `${user.name} فرصت فروش «${deal.title}» را ایجاد کرد.`,
     });
+
+    await runCrmAutomations({
+      workspaceId: workspace.id,
+      actorId: user.id,
+      trigger: "deal_created",
+      entityType: "crm_deal",
+      entityId: deal.id,
+    });
+
+    if (deal.status === "won" || deal.status === "lost") {
+      await runCrmAutomations({
+        workspaceId: workspace.id,
+        actorId: user.id,
+        trigger: deal.status === "won" ? "deal_won" : "deal_lost",
+        entityType: "crm_deal",
+        entityId: deal.id,
+      });
+    }
 
     return ok({ deal }, 201);
   } catch (error) {
