@@ -14,7 +14,7 @@ import {
   timeEntries,
 } from "@/db/schema";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
+import type { BulkTaskActionInput, CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
 import { ApiError, NotFoundError } from "@/lib/api-response";
 
 export type TaskFilters = {
@@ -412,4 +412,138 @@ export async function getOverdueTasks(workspaceId: string, limit = 50) {
 export async function getTasksByIds(ids: string[]) {
   if (ids.length === 0) return [];
   return db.select().from(tasks).where(inArray(tasks.id, ids));
+}
+
+
+export async function bulkUpdateTasks(workspaceId: string, input: BulkTaskActionInput) {
+  const selected = await db
+    .select({
+      id: tasks.id,
+      projectId: tasks.projectId,
+      statusId: tasks.statusId,
+      assigneeId: tasks.assigneeId,
+      title: tasks.title,
+    })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+        inArray(tasks.id, input.taskIds),
+      ),
+    );
+
+  if (selected.length !== input.taskIds.length) {
+    throw new NotFoundError("یک یا چند وظیفه انتخاب‌شده یافت نشد.");
+  }
+
+  if (input.action === "assign") {
+    await db
+      .update(tasks)
+      .set({ assigneeId: input.assigneeId, updatedAt: new Date() })
+      .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, input.taskIds)));
+
+    return { updatedIds: input.taskIds, assigneeId: input.assigneeId };
+  }
+
+  if (input.action === "priority") {
+    await db
+      .update(tasks)
+      .set({ priority: input.priority, updatedAt: new Date() })
+      .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, input.taskIds)));
+
+    return { updatedIds: input.taskIds, priority: input.priority };
+  }
+
+  if (input.action === "delete") {
+    await db
+      .update(tasks)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, input.taskIds)));
+
+    return { updatedIds: input.taskIds, deleted: true };
+  }
+
+  if (input.action === "status") {
+    const projectIds = [...new Set(selected.map((task) => task.projectId))];
+    if (projectIds.length !== 1) {
+      throw new ApiError("تغییر وضعیت گروهی فقط برای وظایف یک پروژه ممکن است.", 409);
+    }
+
+    const statusRows = await db
+      .select({ id: taskStatuses.id, projectId: taskStatuses.projectId, isDone: taskStatuses.isDone })
+      .from(taskStatuses)
+      .where(eq(taskStatuses.id, input.statusId))
+      .limit(1);
+
+    const targetStatus = statusRows[0];
+    if (!targetStatus || targetStatus.projectId !== projectIds[0]) {
+      throw new ApiError("وضعیت انتخاب‌شده متعلق به این پروژه نیست.", 400);
+    }
+
+    if (targetStatus.isDone) {
+      for (const task of selected) {
+        await assertTaskCanComplete(task.id);
+      }
+    }
+
+    await db
+      .update(tasks)
+      .set({
+        statusId: input.statusId,
+        completedAt: targetStatus.isDone ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, input.taskIds)));
+
+    return { updatedIds: input.taskIds, statusId: input.statusId, completed: targetStatus.isDone };
+  }
+
+  if (input.action === "complete") {
+    for (const task of selected) {
+      await assertTaskCanComplete(task.id);
+    }
+  }
+
+  const projectIds = [...new Set(selected.map((task) => task.projectId))];
+  const statusRows = await db
+    .select({ id: taskStatuses.id, projectId: taskStatuses.projectId, isDone: taskStatuses.isDone, order: taskStatuses.order })
+    .from(taskStatuses)
+    .where(inArray(taskStatuses.projectId, projectIds))
+    .orderBy(asc(taskStatuses.order));
+
+  const targetStatusByProject = new Map<string, string>();
+
+  for (const projectId of projectIds) {
+    const projectStatuses = statusRows.filter((status) => status.projectId === projectId);
+    const target = input.action === "complete"
+      ? projectStatuses.find((status) => status.isDone)
+      : projectStatuses.find((status) => !status.isDone);
+
+    if (!target) {
+      throw new ApiError(
+        input.action === "complete"
+          ? "یکی از پروژه‌ها وضعیت انجام‌شده ندارد."
+          : "یکی از پروژه‌ها وضعیت باز ندارد.",
+        409,
+      );
+    }
+    targetStatusByProject.set(projectId, target.id);
+  }
+
+  await db.transaction(async (tx) => {
+    for (const [projectId, statusId] of targetStatusByProject.entries()) {
+      const ids = selected.filter((task) => task.projectId === projectId).map((task) => task.id);
+      await tx
+        .update(tasks)
+        .set({
+          statusId,
+          completedAt: input.action === "complete" ? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(tasks.workspaceId, workspaceId), inArray(tasks.id, ids)));
+    }
+  });
+
+  return { updatedIds: input.taskIds, completed: input.action === "complete" };
 }
