@@ -16,9 +16,23 @@ import { formatJalaliDate } from "@/lib/date";
 import { Plus, ListChecks, Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api, ClientApiError } from "@/lib/api-client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 const PRIORITY_LABELS: Record<string, string> = { critical: "بحرانی", high: "بالا", medium: "متوسط", low: "پایین" };
+
+type TaskSavedView = {
+  id: string;
+  name: string;
+  filters: {
+    search?: string;
+    projectId?: string;
+    assigneeId?: string;
+    priority?: "critical" | "high" | "medium" | "low";
+    overdue?: boolean;
+  };
+  isDefault: boolean;
+};
 
 function TasksPageInner() {
   const searchParams = useSearchParams();
@@ -31,6 +45,10 @@ function TasksPageInner() {
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [savingView, setSavingView] = useState(false);
+  const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
 
   useEffect(() => {
     const taskId = searchParams.get("taskId");
@@ -46,6 +64,10 @@ function TasksPageInner() {
   });
   const { data: projectsData } = useProjects();
   const { data: membersData } = useMembers();
+  const { data: savedViewsData } = useQuery({
+    queryKey: ["task-saved-views"],
+    queryFn: () => api.get<{ views: TaskSavedView[] }>("/api/task-views"),
+  });
 
   const tasks = useMemo(() => data?.tasks ?? [], [data]);
   const selectedTasks = useMemo(
@@ -106,6 +128,67 @@ function TasksPageInner() {
     }
   }
 
+  function markFiltersChanged() {
+    setActiveSavedViewId(null);
+    setSelectedIds(new Set());
+  }
+
+  function applySavedView(view: TaskSavedView) {
+    setSearch(view.filters.search ?? "");
+    setProjectId(view.filters.projectId ?? "all");
+    setAssigneeId(view.filters.assigneeId ?? "all");
+    setPriority(view.filters.priority ?? "all");
+    setOnlyOverdue(Boolean(view.filters.overdue));
+    setSelectedIds(new Set());
+    setActiveSavedViewId(view.id);
+  }
+
+  async function saveCurrentView() {
+    const name = viewName.trim();
+    if (name.length < 2) {
+      toast.error("یک نام کوتاه برای این View وارد کنید.");
+      return;
+    }
+
+    try {
+      setSavingView(true);
+      const filters = {
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(projectId !== "all" ? { projectId } : {}),
+        ...(assigneeId !== "all" ? { assigneeId } : {}),
+        ...(priority !== "all" ? { priority } : {}),
+        ...(onlyOverdue ? { overdue: true } : {}),
+      };
+
+      const response = await api.post<{ view: TaskSavedView }>("/api/task-views", {
+        name,
+        filters,
+        isDefault: false,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["task-saved-views"] });
+      setActiveSavedViewId(response.view.id);
+      setViewName("");
+      setSaveViewOpen(false);
+      toast.success("نمای فیلتر ذخیره شد.");
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "ذخیره View انجام نشد.");
+    } finally {
+      setSavingView(false);
+    }
+  }
+
+  async function deleteSavedView(viewId: string) {
+    try {
+      await api.delete(`/api/task-views/${viewId}`);
+      if (activeSavedViewId === viewId) setActiveSavedViewId(null);
+      await queryClient.invalidateQueries({ queryKey: ["task-saved-views"] });
+      toast.success("View حذف شد.");
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "حذف View انجام نشد.");
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -124,26 +207,26 @@ function TasksPageInner() {
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              setSelectedIds(new Set());
+              markFiltersChanged();
             }}
             className="pr-9"
           />
         </div>
-        <Select value={projectId} onValueChange={(value) => { setProjectId(value); setSelectedIds(new Set()); }}>
+        <Select value={projectId} onValueChange={(value) => { setProjectId(value); markFiltersChanged(); }}>
           <SelectTrigger className="w-40"><SelectValue placeholder="پروژه" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه پروژه‌ها</SelectItem>
             {(projectsData?.projects ?? []).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={assigneeId} onValueChange={(value) => { setAssigneeId(value); setSelectedIds(new Set()); }}>
+        <Select value={assigneeId} onValueChange={(value) => { setAssigneeId(value); markFiltersChanged(); }}>
           <SelectTrigger className="w-36"><SelectValue placeholder="مسئول" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اعضا</SelectItem>
             {(membersData?.members ?? []).map((m) => <SelectItem key={m.userId} value={m.userId}>{m.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={priority} onValueChange={(value) => { setPriority(value); setSelectedIds(new Set()); }}>
+        <Select value={priority} onValueChange={(value) => { setPriority(value); markFiltersChanged(); }}>
           <SelectTrigger className="w-32"><SelectValue placeholder="اولویت" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">همه اولویت‌ها</SelectItem>
@@ -151,12 +234,43 @@ function TasksPageInner() {
           </SelectContent>
         </Select>
         <button
-          onClick={() => { setOnlyOverdue((v) => !v); setSelectedIds(new Set()); }}
+          onClick={() => { setOnlyOverdue((v) => !v); markFiltersChanged(); }}
           className={`rounded-lg px-3 py-2 text-xs font-medium transition ${onlyOverdue ? "bg-(--color-danger) text-white" : "border border-(--color-border) bg-white text-(--color-muted)"}`}
         >
           فقط عقب‌افتاده
         </button>
+        <Button size="sm" variant="secondary" onClick={() => setSaveViewOpen(true)}>
+          ذخیره این نما
+        </Button>
       </div>
+
+      {(savedViewsData?.views.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold text-(--color-muted)">نماهای ذخیره‌شده:</span>
+          {savedViewsData?.views.map((view) => (
+            <div
+              key={view.id}
+              className={`inline-flex items-center overflow-hidden rounded-xl border text-xs transition ${activeSavedViewId === view.id ? "border-(--color-primary) bg-(--color-primary-soft)" : "border-(--color-border) bg-white"}`}
+            >
+              <button
+                type="button"
+                onClick={() => applySavedView(view)}
+                className="px-3 py-2 font-medium text-(--color-text) hover:bg-slate-50"
+              >
+                {view.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteSavedView(view.id)}
+                className="border-r border-(--color-border) px-2 py-2 text-slate-400 hover:bg-red-50 hover:text-(--color-danger)"
+                aria-label={`حذف View ${view.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {selectedIds.size > 0 && (
         <div className="rounded-2xl border border-(--color-primary)/20 bg-(--color-primary-soft) p-3">
@@ -295,6 +409,43 @@ function TasksPageInner() {
           })}
         </div>
       )}
+
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+        <DialogContent
+          title="ذخیره نمای وظایف"
+          description="فیلترهای فعلی با این نام ذخیره می‌شوند و فقط برای حساب شما قابل مشاهده‌اند."
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-(--color-text)">نام View</p>
+              <Input
+                value={viewName}
+                onChange={(event) => setViewName(event.target.value)}
+                placeholder="مثلاً کارهای فوری من"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") saveCurrentView();
+                }}
+              />
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 text-[11px] text-(--color-muted)">
+              <p>
+                پروژه: {projectId === "all" ? "همه" : projectsData?.projects.find((project) => project.id === projectId)?.name ?? "انتخاب‌شده"}
+                {" · "}
+                مسئول: {assigneeId === "all" ? "همه" : membersData?.members.find((member) => member.userId === assigneeId)?.name ?? "انتخاب‌شده"}
+              </p>
+              <p className="mt-1">
+                اولویت: {priority === "all" ? "همه" : PRIORITY_LABELS[priority]}
+                {onlyOverdue ? " · فقط عقب‌افتاده" : ""}
+                {search.trim() ? ` · جستجو: «${search.trim()}»` : ""}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setSaveViewOpen(false)}>انصراف</Button>
+              <Button loading={savingView} onClick={saveCurrentView}>ذخیره View</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

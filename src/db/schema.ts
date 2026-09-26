@@ -488,6 +488,26 @@ export const taskRecurrenceRules = pgTable("task_recurrence_rules", {
   index("task_recurrence_rules_workspace_idx").on(t.workspaceId, t.isActive),
 ]);
 
+export const taskSavedViews = pgTable("task_saved_views", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  filters: jsonb("filters").$type<{
+    search?: string;
+    projectId?: string;
+    assigneeId?: string;
+    priority?: string;
+    overdue?: boolean;
+  }>().notNull().default({}),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("task_saved_views_user_name_idx").on(t.workspaceId, t.userId, t.name),
+  index("task_saved_views_user_idx").on(t.workspaceId, t.userId, t.createdAt),
+]);
+
 export const taskDependencies = pgTable("task_dependencies", {
   id: uuid("id").primaryKey().defaultRandom(),
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
