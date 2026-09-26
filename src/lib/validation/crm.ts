@@ -17,7 +17,13 @@ export const createLeadSchema = z.object({
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 
 export const updateLeadSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  companyName: optionalText(180),
+  phone: optionalText(50),
+  email: z.string().trim().email("ایمیل معتبر نیست.").max(255).optional().nullable().or(z.literal("")),
+  source: optionalText(80),
   status: z.enum(crmLeadStatusValues).optional(),
+  estimatedValue: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().nullable(),
   ownerId: z.string().uuid().optional().nullable(),
   notes: optionalText(4000),
 });

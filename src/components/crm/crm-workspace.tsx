@@ -522,6 +522,13 @@ function LeadsView({
               {lead.status === "converted" && <option value="converted">تبدیل شد</option>}
             </select>
 
+            <Link
+              href={`/app/crm/leads/${lead.id}`}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-(--color-border) bg-white px-3 text-[11px] font-semibold text-(--color-primary)"
+            >
+              مشاهده پرونده
+            </Link>
+
             {lead.status !== "converted" && (
               <Button size="sm" onClick={() => onConvert(lead.id)} loading={converting}>
                 تبدیل به فرصت فروش
