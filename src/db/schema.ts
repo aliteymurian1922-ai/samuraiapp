@@ -289,6 +289,7 @@ export const crmSalesGoalAlertEvents = pgTable("crm_sales_goal_alert_events", {
     t.alertType,
   ),
   index("crm_sales_goal_alert_events_user_idx").on(t.workspaceId, t.userId, t.createdAt),
+  index("crm_sales_goal_alert_events_user_fk_idx").on(t.userId),
 ]);
 
 export const crmDeals = pgTable("crm_deals", {
