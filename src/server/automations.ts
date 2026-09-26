@@ -17,6 +17,7 @@ import type {
 } from "@/lib/validation/automations";
 import { NotFoundError } from "@/lib/api-response";
 import { createProject } from "@/server/projects";
+import { instantiateProjectTemplate } from "@/server/project-templates";
 
 type EntityType = "crm_lead" | "crm_deal";
 
@@ -180,19 +181,29 @@ async function executeRule(
       ? (priorityRaw as "critical" | "high" | "medium" | "low")
       : "medium";
 
-    const project = await createProject(context.workspaceId, context.actorId, {
-      name: stringConfig(actionConfig, "name", entity.title),
-      description: stringConfig(
-        actionConfig,
-        "description",
-        `پروژه به‌صورت خودکار از فروش موفق «${entity.title}» ساخته شد.`,
-      ),
-      priority,
-      color: stringConfig(actionConfig, "color", "#4f46e5"),
-      startDate: new Date().toISOString(),
-      dueDate: null,
-      memberIds: entity.ownerId ? [entity.ownerId] : [],
-    });
+    const templateId =
+      typeof actionConfig.templateId === "string" && actionConfig.templateId.trim()
+        ? actionConfig.templateId.trim()
+        : null;
+
+    const project = templateId
+      ? await instantiateProjectTemplate(context.workspaceId, context.actorId, templateId, {
+          name: stringConfig(actionConfig, "name", entity.title),
+          memberIds: entity.ownerId ? [entity.ownerId] : [],
+        })
+      : await createProject(context.workspaceId, context.actorId, {
+          name: stringConfig(actionConfig, "name", entity.title),
+          description: stringConfig(
+            actionConfig,
+            "description",
+            `پروژه به‌صورت خودکار از فروش موفق «${entity.title}» ساخته شد.`,
+          ),
+          priority,
+          color: stringConfig(actionConfig, "color", "#4f46e5"),
+          startDate: new Date().toISOString(),
+          dueDate: null,
+          memberIds: entity.ownerId ? [entity.ownerId] : [],
+        });
 
     await db
       .update(crmDeals)
