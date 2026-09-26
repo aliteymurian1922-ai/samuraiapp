@@ -26,6 +26,7 @@ npm run dev
 - `DATABASE_URL`
 - `AUTH_SECRET`
 - `OPENAI_API_KEY` فقط برای قابلیت‌های AI لازم است.
+- برای بازیابی رمز عبور در Production: `APP_URL`، `RESEND_API_KEY` و `EMAIL_FROM` لازم‌اند. `EMAIL_FROM` باید از sender/domain تأییدشده در سرویس ایمیل باشد.
 
 ## کنترل کیفیت
 
@@ -40,3 +41,8 @@ npm run build
 
 - `main`: نسخه پایدار
 - `develop`: توسعه و اصلاحات قبل از Merge
+
+
+## ایمیل بازیابی رمز عبور
+
+سامورایی برای ارسال ایمیل بازیابی رمز عبور از Resend REST API استفاده می‌کند. در development، اگر سرویس ایمیل تنظیم نشده باشد، مسیر reset می‌تواند در پاسخ API نمایش داده شود؛ در Production لینک reset هرگز در پاسخ API برگردانده نمی‌شود و اگر ارسال ایمیل موفق نباشد token ساخته‌شده باطل می‌شود.
