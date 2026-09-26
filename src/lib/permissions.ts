@@ -6,6 +6,10 @@ export type Capability =
   | "members.invite"
   | "members.manage"
   | "members.remove"
+  | "crm.view"
+  | "crm.create"
+  | "crm.update"
+  | "crm.delete"
   | "project.create"
   | "project.update"
   | "project.delete"
@@ -38,6 +42,10 @@ const CAPABILITY_MIN_ROLE: Record<Capability, number> = {
   "members.invite": ROLE_RANK.admin,
   "members.manage": ROLE_RANK.admin,
   "members.remove": ROLE_RANK.admin,
+  "crm.view": ROLE_RANK.viewer,
+  "crm.create": ROLE_RANK.member,
+  "crm.update": ROLE_RANK.member,
+  "crm.delete": ROLE_RANK.manager,
   "project.create": ROLE_RANK.manager,
   "project.update": ROLE_RANK.manager,
   "project.delete": ROLE_RANK.admin,
