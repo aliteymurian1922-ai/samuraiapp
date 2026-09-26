@@ -18,7 +18,9 @@ export async function GET() {
     return Response.json(
       {
         ok: false,
-        databaseConfigured: Boolean(process.env.DATABASE_URL),
+        databaseConfigured: Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL),
+        authConfigured: Boolean(process.env.AUTH_SECRET),
+        emailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
       },
       { status: 500 },
     );
