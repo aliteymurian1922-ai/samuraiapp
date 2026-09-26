@@ -75,13 +75,45 @@ describe("calculateLeadScore", () => {
     });
 
     expect(overdue.score).toBeLessThan(healthy.score);
+    expect(overdue.priorityScore).toBeGreaterThan(healthy.priorityScore);
+    expect(overdue.recommendedAction).toContain("امروز");
     expect(overdue.reasons).toContain("پیگیری عقب‌افتاده دارد.");
+  });
+
+  it("separates lead quality from action urgency", () => {
+    const highQualityScheduled = calculateLeadScore({
+      ...base(),
+      status: "qualified",
+      completedActivities: 3,
+      nextFollowUpAt: new Date("2026-10-05T12:00:00.000Z"),
+      lastActivityAt: new Date("2026-09-26T08:00:00.000Z"),
+    });
+    const overdue = calculateLeadScore({
+      ...base(),
+      status: "qualified",
+      completedActivities: 3,
+      overdueFollowUps: 2,
+      lastActivityAt: new Date("2026-09-26T08:00:00.000Z"),
+    });
+
+    expect(overdue.score).toBeLessThan(highQualityScheduled.score);
+    expect(overdue.priorityScore).toBeGreaterThan(highQualityScheduled.priorityScore);
+    expect(overdue.priorityBand).toBe("urgent");
+  });
+
+  it("recommends setting a next action when none exists", () => {
+    const result = calculateLeadScore(base());
+
+    expect(result.recommendedAction).toContain("اقدام بعدی");
+    expect(result.priorityScore).toBeGreaterThan(0);
   });
 
   it("treats converted and unqualified leads explicitly", () => {
     expect(calculateLeadScore({ ...base(), status: "converted" }).band).toBe("converted");
     expect(calculateLeadScore({ ...base(), status: "converted" }).score).toBe(100);
+    expect(calculateLeadScore({ ...base(), status: "converted" }).priorityBand).toBe("done");
     expect(calculateLeadScore({ ...base(), status: "unqualified" }).band).toBe("inactive");
     expect(calculateLeadScore({ ...base(), status: "unqualified" }).score).toBe(0);
+    expect(calculateLeadScore({ ...base(), status: "unqualified" }).priorityScore).toBe(0);
   });
 });

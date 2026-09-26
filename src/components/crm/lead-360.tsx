@@ -67,6 +67,9 @@ type Response = {
   score: {
     score: number;
     band: "hot" | "warm" | "cold" | "inactive" | "converted";
+    priorityScore: number;
+    priorityBand: "urgent" | "high" | "normal" | "low" | "done";
+    recommendedAction: string;
     reasons: string[];
     breakdown: {
       status: number;
@@ -275,6 +278,18 @@ export function Lead360({ leadId }: { leadId: string }) {
             </div>
           </div>
         </div>
+
+        {score.priorityBand !== "done" && (
+          <div className="mt-4 flex flex-col justify-between gap-3 border-y border-(--color-border) py-3 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-[11px] font-semibold text-(--color-muted)">اقدام پیشنهادی بعدی</p>
+              <p className="mt-1 text-sm font-bold text-(--color-text)">{score.recommendedAction}</p>
+            </div>
+            <Badge variant={score.priorityBand === "urgent" ? "danger" : score.priorityBand === "high" ? "warning" : "outline"}>
+              اولویت اقدام {numberFa.format(score.priorityScore)} از ۱۰۰
+            </Badge>
+          </div>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <ScorePart label="وضعیت" value={score.breakdown.status} />

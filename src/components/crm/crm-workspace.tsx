@@ -92,6 +92,9 @@ type Lead = {
   updatedAt: string;
   score: number;
   band: "hot" | "warm" | "cold" | "inactive" | "converted";
+  priorityScore: number;
+  priorityBand: "urgent" | "high" | "normal" | "low" | "done";
+  recommendedAction: string;
   reasons: string[];
   nextFollowUpAt: string | null;
   overdueFollowUps: number;
@@ -483,7 +486,7 @@ function LeadsView({
   converting: boolean;
   onStatusChange: (id: string, status: Lead["status"]) => void;
 }) {
-  const [sort, setSort] = useState<"score" | "newest" | "value">("score");
+  const [sort, setSort] = useState<"priority" | "score" | "newest" | "value">("priority");
 
   const sortedLeads = useMemo(() => {
     return [...leads].sort((a, b) => {
@@ -495,12 +498,16 @@ function LeadsView({
         return Number(b.estimatedValue ?? 0) - Number(a.estimatedValue ?? 0);
       }
 
-      const priority = (lead: Lead) =>
+      const activeValue = (lead: Lead, value: number) =>
         lead.band === "converted" || lead.band === "inactive"
-          ? -1000 + lead.score
-          : lead.score;
+          ? -1000 + value
+          : value;
 
-      return priority(b) - priority(a);
+      if (sort === "score") {
+        return activeValue(b, b.score) - activeValue(a, a.score);
+      }
+
+      return activeValue(b, b.priorityScore) - activeValue(a, a.priorityScore);
     });
   }, [leads, sort]);
 
@@ -545,26 +552,32 @@ function LeadsView({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold text-(--color-text)">اولویت پیگیری سرنخ‌ها</p>
-          <p className="mt-0.5 text-[10px] text-(--color-muted)">امتیاز بر اساس وضعیت، ارزش، اطلاعات، تعامل و برنامه پیگیری محاسبه می‌شود.</p>
+          <p className="mt-0.5 text-[11px] leading-5 text-(--color-muted)">اولویت اقدام، کیفیت سرنخ را با فوریت پیگیری ترکیب می‌کند؛ Lead Score فقط کیفیت و آمادگی تبدیل را نشان می‌دهد.</p>
         </div>
         <select
           value={sort}
           onChange={(event) => setSort(event.target.value as typeof sort)}
           className="h-9 rounded-xl border border-(--color-border) bg-white px-3 text-xs text-(--color-text)"
         >
-          <option value="score">اولویت هوشمند</option>
+          <option value="priority">اولویت اقدام</option>
+          <option value="score">بالاترین Lead Score</option>
           <option value="newest">جدیدترین</option>
           <option value="value">بیشترین ارزش</option>
         </select>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {sortedLeads.map((lead) => (
+        {sortedLeads.map((lead, index) => (
           <Card key={lead.id} className="p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-bold text-(--color-text)">{lead.name}</p>
+                  {sort === "priority" && lead.priorityBand !== "done" && (
+                    <span className="text-xs font-extrabold text-(--color-muted)" aria-label={`رتبه ${index + 1}`}>
+                      رتبه {numberFa.format(index + 1)}
+                    </span>
+                  )}
                   <Badge variant={lead.status === "converted" ? "success" : lead.status === "unqualified" ? "danger" : lead.status === "qualified" ? "primary" : "outline"}>
                     {LEAD_STATUS_LABEL[lead.status]}
                   </Badge>
@@ -583,6 +596,19 @@ function LeadsView({
                   >
                     امتیاز {numberFa.format(lead.score)}
                   </Badge>
+                  {lead.priorityBand !== "done" && (
+                    <Badge
+                      variant={
+                        lead.priorityBand === "urgent"
+                          ? "danger"
+                          : lead.priorityBand === "high"
+                            ? "warning"
+                            : "outline"
+                      }
+                    >
+                      اولویت {numberFa.format(lead.priorityScore)}
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-1 text-xs text-(--color-muted)">{lead.companyName || "بدون نام شرکت"}</p>
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
@@ -593,6 +619,9 @@ function LeadsView({
                 </div>
 
                 <div className="mt-3 space-y-1">
+                  <p className="text-[11px] font-semibold leading-5 text-(--color-text)">
+                    اقدام پیشنهادی: {lead.recommendedAction}
+                  </p>
                   {lead.reasons.slice(0, 2).map((reason) => (
                     <p key={reason} className="text-[10px] leading-5 text-(--color-muted)">
                       • {reason}
@@ -616,11 +645,9 @@ function LeadsView({
               </div>
             </div>
 
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-(--color-primary)"
-                style={{ width: `${lead.score}%` }}
-              />
+            <div className="mt-4 grid grid-cols-2 gap-3" aria-label="مقایسه امتیاز کیفیت و اولویت اقدام">
+              <ScoreBar label="کیفیت سرنخ" value={lead.score} tone="quality" />
+              <ScoreBar label="اولویت اقدام" value={lead.priorityScore} tone="priority" />
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-3">
@@ -651,6 +678,38 @@ function LeadsView({
             </div>
           </Card>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ScoreBar({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "quality" | "priority";
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[10px] font-medium text-(--color-muted)">
+        <span>{label}</span>
+        <span>{numberFa.format(value)}</span>
+      </div>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-slate-100"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+      >
+        <div
+          className={`h-full rounded-full ${tone === "quality" ? "bg-(--color-primary)" : "bg-(--color-danger)"}`}
+          style={{ width: `${value}%` }}
+        />
       </div>
     </div>
   );
