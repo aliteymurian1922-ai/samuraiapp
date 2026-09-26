@@ -16,6 +16,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatJalaliDate } from "@/lib/date";
 import { CrmActivitiesView } from "@/components/crm/crm-activities-view";
 import { CrmProductsView, useCrmProducts, type CrmProduct } from "@/components/crm/crm-products-view";
+import {
+  CrmCustomFieldsFormSection,
+  CrmCustomFieldsView,
+  readCrmCustomFieldValues,
+  saveCrmCustomFieldValues,
+  useCrmCustomFields,
+  type CrmCustomField,
+} from "@/components/crm/crm-custom-fields-view";
 
 type Deal = {
   id: string;
@@ -97,7 +105,7 @@ type Customer = {
   createdAt: string;
 };
 
-type Tab = "pipeline" | "leads" | "customers" | "activities" | "products";
+type Tab = "pipeline" | "leads" | "customers" | "activities" | "products" | "customFields";
 
 const LEAD_STATUS_LABEL: Record<Lead["status"], string> = {
   new: "جدید",
@@ -137,6 +145,9 @@ export function CrmWorkspace() {
   });
 
   const products = useCrmProducts();
+  const leadCustomFields = useCrmCustomFields("lead");
+  const contactCustomFields = useCrmCustomFields("contact");
+  const dealCustomFields = useCrmCustomFields("deal");
   const { data: memberData } = useMembers();
 
   const invalidateCrm = async () => {
@@ -229,6 +240,7 @@ export function CrmWorkspace() {
         <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>مشتریان</TabButton>
         <TabButton active={tab === "activities"} onClick={() => setTab("activities")}>پیگیری‌ها</TabButton>
         <TabButton active={tab === "products"} onClick={() => setTab("products")}>محصولات / خدمات</TabButton>
+        <TabButton active={tab === "customFields"} onClick={() => setTab("customFields")}>فیلدهای سفارشی</TabButton>
       </div>
 
       {tab === "pipeline" && (
@@ -264,17 +276,20 @@ export function CrmWorkspace() {
 
       {tab === "activities" && <CrmActivitiesView />}
       {tab === "products" && <CrmProductsView />}
+      {tab === "customFields" && <CrmCustomFieldsView />}
 
       <LeadDialog
         open={leadOpen}
         onOpenChange={setLeadOpen}
         members={memberData?.members ?? []}
+        customFields={leadCustomFields.data?.fields ?? []}
         onCreated={invalidateCrm}
       />
       <CustomerDialog
         open={customerOpen}
         onOpenChange={setCustomerOpen}
         members={memberData?.members ?? []}
+        customFields={contactCustomFields.data?.fields ?? []}
         onCreated={invalidateCrm}
       />
       <DealDialog
@@ -284,6 +299,7 @@ export function CrmWorkspace() {
         customers={customers.data?.customers ?? []}
         products={products.data?.products ?? []}
         members={memberData?.members ?? []}
+        customFields={dealCustomFields.data?.fields ?? []}
         onCreated={invalidateCrm}
       />
     </div>
@@ -566,11 +582,13 @@ function LeadDialog({
   open,
   onOpenChange,
   members,
+  customFields,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   members: { userId: string; name: string }[];
+  customFields: CrmCustomField[];
   onCreated: () => Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -578,10 +596,11 @@ function LeadDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const customValues = readCrmCustomFieldValues(form, customFields);
 
     try {
       setSubmitting(true);
-      await api.post("/api/crm/leads", {
+      const response = await api.post<{ lead: { id: string } }>("/api/crm/leads", {
         name: String(form.get("name") || ""),
         companyName: String(form.get("companyName") || "") || null,
         phone: String(form.get("phone") || "") || null,
@@ -591,8 +610,15 @@ function LeadDialog({
         ownerId: String(form.get("ownerId") || "") || null,
         notes: String(form.get("notes") || "") || null,
       });
+
+      try {
+        await saveCrmCustomFieldValues("lead", response.lead.id, customValues);
+        toast.success("سرنخ ثبت شد.");
+      } catch {
+        toast.warning("سرنخ ثبت شد، اما اطلاعات اختصاصی کامل ذخیره نشد.");
+      }
+
       await onCreated();
-      toast.success("سرنخ ثبت شد.");
       onOpenChange(false);
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -624,6 +650,7 @@ function LeadDialog({
             </Field>
           </div>
           <Field label="یادداشت"><Textarea name="notes" rows={3} /></Field>
+          <CrmCustomFieldsFormSection fields={customFields} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>انصراف</Button>
             <Button type="submit" loading={submitting}>ثبت سرنخ</Button>
@@ -638,11 +665,13 @@ function CustomerDialog({
   open,
   onOpenChange,
   members,
+  customFields,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   members: { userId: string; name: string }[];
+  customFields: CrmCustomField[];
   onCreated: () => Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -650,10 +679,11 @@ function CustomerDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const customValues = readCrmCustomFieldValues(form, customFields);
 
     try {
       setSubmitting(true);
-      await api.post("/api/crm/customers", {
+      const response = await api.post<{ customer: { id: string } }>("/api/crm/customers", {
         name: String(form.get("name") || ""),
         companyName: String(form.get("companyName") || "") || null,
         jobTitle: String(form.get("jobTitle") || "") || null,
@@ -663,8 +693,15 @@ function CustomerDialog({
         ownerId: String(form.get("ownerId") || "") || null,
         notes: String(form.get("notes") || "") || null,
       });
+
+      try {
+        await saveCrmCustomFieldValues("contact", response.customer.id, customValues);
+        toast.success("مشتری ثبت شد.");
+      } catch {
+        toast.warning("مشتری ثبت شد، اما اطلاعات اختصاصی کامل ذخیره نشد.");
+      }
+
       await onCreated();
-      toast.success("مشتری ثبت شد.");
       onOpenChange(false);
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -696,6 +733,7 @@ function CustomerDialog({
             </Field>
           </div>
           <Field label="یادداشت"><Textarea name="notes" rows={3} /></Field>
+          <CrmCustomFieldsFormSection fields={customFields} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>انصراف</Button>
             <Button type="submit" loading={submitting}>ثبت مشتری</Button>
@@ -713,6 +751,7 @@ function DealDialog({
   customers,
   products,
   members,
+  customFields,
   onCreated,
 }: {
   open: boolean;
@@ -721,6 +760,7 @@ function DealDialog({
   customers: Customer[];
   products: CrmProduct[];
   members: { userId: string; name: string }[];
+  customFields: CrmCustomField[];
   onCreated: () => Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -733,10 +773,11 @@ function DealDialog({
     const customerId = String(form.get("customerId") || "");
     const customer = customerId ? customerById.get(customerId) : undefined;
     const date = String(form.get("expectedCloseAt") || "");
+    const customValues = readCrmCustomFieldValues(form, customFields);
 
     try {
       setSubmitting(true);
-      await api.post("/api/crm/deals", {
+      const response = await api.post<{ deal: { id: string } }>("/api/crm/deals", {
         title: String(form.get("title") || ""),
         value: Number(form.get("value") || 0),
         contactId: customer?.id ?? null,
@@ -748,8 +789,15 @@ function DealDialog({
         productId: String(form.get("productId") || "") || null,
         quantity: Number(form.get("quantity") || 1),
       });
+
+      try {
+        await saveCrmCustomFieldValues("deal", response.deal.id, customValues);
+        toast.success("فرصت فروش ایجاد شد.");
+      } catch {
+        toast.warning("فرصت فروش ساخته شد، اما اطلاعات اختصاصی کامل ذخیره نشد.");
+      }
+
       await onCreated();
-      toast.success("فرصت فروش ایجاد شد.");
       onOpenChange(false);
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -806,6 +854,7 @@ function DealDialog({
             <Field label="منبع"><Input name="source" placeholder="سایت، معرفی، تبلیغات..." /></Field>
             <Field label="تاریخ احتمالی نهایی‌شدن"><Input name="expectedCloseAt" type="date" /></Field>
           </div>
+          <CrmCustomFieldsFormSection fields={customFields} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>انصراف</Button>
             <Button type="submit" loading={submitting}>ایجاد فرصت</Button>
