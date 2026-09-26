@@ -8,9 +8,11 @@ import {
   users,
 } from "@/db/schema";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { currentMonthKey, getSalesTargets } from "@/server/sales-targets";
 
 export async function buildSalesForecast(workspaceId: string) {
-  const [summaryRows, stageRows, teamRows, trendRows, riskRows] = await Promise.all([
+  const currentMonth = currentMonthKey();
+  const [summaryRows, stageRows, teamRows, trendRows, riskRows, targets] = await Promise.all([
     db
       .select({
         openDeals: sql<number>`count(*) filter (where ${crmDeals.status} = 'open')::int`,
@@ -215,6 +217,8 @@ export async function buildSalesForecast(workspaceId: string) {
       )
       .orderBy(asc(crmDeals.expectedCloseAt))
       .limit(50),
+
+    getSalesTargets(workspaceId, currentMonth),
   ]);
 
   const summary = summaryRows[0] ?? {
@@ -257,21 +261,78 @@ export async function buildSalesForecast(workspaceId: string) {
     .sort((a, b) => b.reasons.length - a.reasons.length || Number(b.value) - Number(a.value))
     .slice(0, 10);
 
-  const team = teamRows.map((member) => {
-    const decided = member.wonCountThisMonth + member.lostCountThisMonth;
+  const teamRowMap = new Map(
+    teamRows
+      .filter((member) => member.ownerId)
+      .map((member) => [member.ownerId as string, member]),
+  );
+
+  const team = targets.members.map((member) => {
+    const sales = teamRowMap.get(member.userId);
+    const wonCountThisMonth = sales?.wonCountThisMonth ?? 0;
+    const lostCountThisMonth = sales?.lostCountThisMonth ?? 0;
+    const decided = wonCountThisMonth + lostCountThisMonth;
+    const wonValueThisMonth = Number(sales?.wonValueThisMonth ?? 0);
+    const weightedValue = Number(sales?.weightedValue ?? 0);
+    const targetValue = Number(member.targetValue ?? 0);
+    const forecastValue = wonValueThisMonth + weightedValue;
+
     return {
-      ...member,
-      ownerName: member.ownerName ?? "بدون مسئول",
-      winRateThisMonth: decided ? Math.round((member.wonCountThisMonth / decided) * 100) : 0,
+      ownerId: member.userId,
+      ownerName: member.name,
+      openDeals: sales?.openDeals ?? 0,
+      openValue: Number(sales?.openValue ?? 0),
+      weightedValue,
+      wonValueThisMonth,
+      wonCountThisMonth,
+      lostCountThisMonth,
+      winRateThisMonth: decided ? Math.round((wonCountThisMonth / decided) * 100) : 0,
+      targetValue,
+      attainmentPercent: targetValue > 0 ? Math.round((wonValueThisMonth / targetValue) * 100) : 0,
+      forecastValue,
+      forecastAttainmentPercent: targetValue > 0 ? Math.round((forecastValue / targetValue) * 100) : 0,
+      gapToTarget: targetValue > 0 ? Math.max(0, targetValue - wonValueThisMonth) : 0,
     };
   });
 
+  const unassigned = teamRows.find((member) => !member.ownerId);
+  if (unassigned) {
+    const wonCountThisMonth = unassigned.wonCountThisMonth ?? 0;
+    const lostCountThisMonth = unassigned.lostCountThisMonth ?? 0;
+    const decided = wonCountThisMonth + lostCountThisMonth;
+    team.push({
+      ownerId: null,
+      ownerName: "بدون مسئول",
+      openDeals: unassigned.openDeals ?? 0,
+      openValue: Number(unassigned.openValue ?? 0),
+      weightedValue: Number(unassigned.weightedValue ?? 0),
+      wonValueThisMonth: Number(unassigned.wonValueThisMonth ?? 0),
+      wonCountThisMonth,
+      lostCountThisMonth,
+      winRateThisMonth: decided ? Math.round((wonCountThisMonth / decided) * 100) : 0,
+      targetValue: 0,
+      attainmentPercent: 0,
+      forecastValue: Number(unassigned.wonValueThisMonth ?? 0) + Number(unassigned.weightedValue ?? 0),
+      forecastAttainmentPercent: 0,
+      gapToTarget: 0,
+    });
+  }
+
+  const forecastThisMonth = Number(summary.wonThisMonth) + Number(summary.weightedDueThisMonth);
+  const workspaceTarget = Number(targets.workspaceTarget ?? 0);
+
   return {
     generatedAt: new Date().toISOString(),
+    targetMonth: currentMonth,
     summary: {
       ...summary,
       winRateThisMonth,
-      forecastThisMonth: Number(summary.wonThisMonth) + Number(summary.weightedDueThisMonth),
+      forecastThisMonth,
+      targetValue: workspaceTarget,
+      attainmentPercent: workspaceTarget > 0 ? Math.round((Number(summary.wonThisMonth) / workspaceTarget) * 100) : 0,
+      forecastAttainmentPercent: workspaceTarget > 0 ? Math.round((forecastThisMonth / workspaceTarget) * 100) : 0,
+      gapToTarget: workspaceTarget > 0 ? Math.max(0, workspaceTarget - Number(summary.wonThisMonth)) : 0,
+      forecastGapToTarget: workspaceTarget > 0 ? workspaceTarget - forecastThisMonth : 0,
     },
     stages: stageRows,
     team,
