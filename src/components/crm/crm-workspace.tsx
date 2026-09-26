@@ -407,17 +407,25 @@ function PipelineView({
                         {deal.expectedCloseAt && <span className="text-[10px] text-slate-400">{formatJalaliDate(deal.expectedCloseAt)}</span>}
                       </div>
 
-                      <select
-                        aria-label="انتقال فرصت به مرحله دیگر"
-                        value={deal.stageId}
-                        disabled={moving}
-                        onChange={(event) => onMove(deal.id, event.target.value)}
-                        className="mt-3 h-8 w-full rounded-lg border border-(--color-border) bg-white px-2 text-[11px] text-(--color-muted)"
-                      >
-                        {overview.stages.map((target) => (
-                          <option key={target.id} value={target.id}>{target.name}</option>
-                        ))}
-                      </select>
+                      <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                        <select
+                          aria-label="انتقال فرصت به مرحله دیگر"
+                          value={deal.stageId}
+                          disabled={moving}
+                          onChange={(event) => onMove(deal.id, event.target.value)}
+                          className="h-8 w-full rounded-lg border border-(--color-border) bg-white px-2 text-[11px] text-(--color-muted)"
+                        >
+                          {overview.stages.map((target) => (
+                            <option key={target.id} value={target.id}>{target.name}</option>
+                          ))}
+                        </select>
+                        <Link
+                          href={`/app/crm/deals/${deal.id}`}
+                          className="inline-flex h-8 items-center justify-center rounded-lg border border-(--color-border) bg-white px-3 text-[11px] font-semibold text-(--color-primary)"
+                        >
+                          پرونده
+                        </Link>
+                      </div>
 
                       {stage.isWon && (
                         <div className="mt-2">
