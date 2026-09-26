@@ -43,37 +43,84 @@ export async function getDashboardSnapshot(workspaceId: string) {
 
 export async function getWorkspaceWorkload(workspaceId: string) {
   const members = await db
-    .select({ id: users.id, name: users.name, avatarColor: users.avatarColor, role: memberships.role })
+    .select({
+      id: users.id,
+      name: users.name,
+      avatarColor: users.avatarColor,
+      role: memberships.role,
+      capacityMinutes: memberships.weeklyCapacityMinutes,
+    })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(eq(memberships.workspaceId, workspaceId));
 
-  const rows = await db
+  const workloadRows = await db
     .select({
       assigneeId: tasks.assigneeId,
-      minutes: sql<number>`coalesce(sum(coalesce(${tasks.estimatedMinutes}, 120)), 0)::int`,
+      openAssignedMinutes: sql<number>`coalesce(sum(coalesce(${tasks.estimatedMinutes}, 120)), 0)::int`,
+      weeklyPlannedMinutes: sql<number>`
+        coalesce(
+          sum(coalesce(${tasks.estimatedMinutes}, 120))
+            filter (
+              where ${tasks.dueDate} is null
+                 or ${tasks.dueDate} <= now() + interval '7 days'
+            ),
+          0
+        )::int
+      `,
       taskCount: sql<number>`count(*)::int`,
       overdue: sql<number>`count(*) filter (where ${tasks.dueDate} < now())::int`,
+      unestimated: sql<number>`count(*) filter (where ${tasks.estimatedMinutes} is null)::int`,
     })
     .from(tasks)
     .innerJoin(taskStatuses, eq(taskStatuses.id, tasks.statusId))
-    .where(and(eq(tasks.workspaceId, workspaceId), isNull(tasks.deletedAt), eq(taskStatuses.isDone, false)))
+    .where(and(
+      eq(tasks.workspaceId, workspaceId),
+      isNull(tasks.deletedAt),
+      eq(taskStatuses.isDone, false),
+    ))
     .groupBy(tasks.assigneeId);
 
-  const map = new Map(rows.map((r) => [r.assigneeId, r]));
+  const trackedRows = await db
+    .select({
+      userId: timeEntries.userId,
+      trackedMinutes7d: sql<number>`coalesce(sum(${timeEntries.durationMinutes}), 0)::int`,
+    })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.workspaceId, workspaceId),
+        sql`${timeEntries.startedAt} >= now() - interval '7 days'`,
+      ),
+    )
+    .groupBy(timeEntries.userId);
 
-  return members.map((m) => {
-    const stat = map.get(m.id);
-    const minutes = stat?.minutes ?? 0;
-    const level: WorkloadLevel = classifyWorkload(minutes);
+  const workloadMap = new Map(workloadRows.map((row) => [row.assigneeId, row]));
+  const trackedMap = new Map(trackedRows.map((row) => [row.userId, row.trackedMinutes7d]));
+
+  return members.map((member) => {
+    const stat = workloadMap.get(member.id);
+    const capacityMinutes = member.capacityMinutes || 2400;
+    const weeklyPlannedMinutes = stat?.weeklyPlannedMinutes ?? 0;
+    const trackedMinutes7d = trackedMap.get(member.id) ?? 0;
+    const level: WorkloadLevel = classifyWorkload(weeklyPlannedMinutes, capacityMinutes);
+
     return {
-      id: m.id,
-      name: m.name,
-      avatarColor: m.avatarColor,
-      role: m.role,
-      assignedMinutes: minutes,
+      id: member.id,
+      name: member.name,
+      avatarColor: member.avatarColor,
+      role: member.role,
+      capacityMinutes,
+      assignedMinutes: stat?.openAssignedMinutes ?? 0,
+      weeklyPlannedMinutes,
+      trackedMinutes7d,
+      utilizationPercent:
+        capacityMinutes > 0 ? Math.round((weeklyPlannedMinutes / capacityMinutes) * 100) : 0,
+      actualUtilizationPercent:
+        capacityMinutes > 0 ? Math.round((trackedMinutes7d / capacityMinutes) * 100) : 0,
       taskCount: stat?.taskCount ?? 0,
       overdueCount: stat?.overdue ?? 0,
+      unestimatedCount: stat?.unestimated ?? 0,
       level,
     };
   });
