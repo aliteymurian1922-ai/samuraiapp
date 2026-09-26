@@ -31,7 +31,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const input = updateTaskSchema.parse(await req.json());
     const task = await updateTask(id, input);
 
-    if (input.completed) {
+    const becameCompleted =
+      input.completed === true ||
+      (input.statusId !== undefined && Boolean(task.completedAt));
+
+    if (becameCompleted) {
       await logActivity({
         workspaceId: workspace.id, actorId: user.id, type: "task.completed", entityType: "task",
         entityId: id, projectId: task.projectId, taskId: id, message: `${user.name} وظیفه «${task.title}» را تکمیل کرد.`,
