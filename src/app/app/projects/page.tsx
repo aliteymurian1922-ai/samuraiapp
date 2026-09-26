@@ -41,7 +41,15 @@ export default function ProjectsPage() {
           <h1 className="text-lg font-bold">پروژه‌ها</h1>
           <p className="text-xs text-(--color-muted)">مدیریت و پیگیری همه پروژه‌های Workspace</p>
         </div>
-        <Button onClick={() => setCreateProjectOpen(true)}><Plus className="size-4" /> پروژه جدید</Button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/app/project-templates"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-(--color-border) bg-white px-4 text-xs font-semibold text-(--color-text) transition hover:bg-slate-50"
+          >
+            قالب‌های پروژه
+          </Link>
+          <Button onClick={() => setCreateProjectOpen(true)}><Plus className="size-4" /> پروژه جدید</Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
