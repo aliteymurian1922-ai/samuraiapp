@@ -21,9 +21,20 @@ import { UserPlus, Trash2 } from "lucide-react";
 
 type TeamMember = {
   membershipId: string; userId: string; name: string; email: string; avatarColor: string | null;
-  role: MembershipRole; joinedAt: string;
+  role: MembershipRole; joinedAt: string; weeklyCapacityMinutes: number;
   counts: { total: number; completed: number; overdue: number };
-  workload: { level: "low" | "balanced" | "high" | "overloaded"; taskCount: number; assignedMinutes: number } | null;
+  workload: {
+    level: "low" | "balanced" | "high" | "overloaded";
+    taskCount: number;
+    assignedMinutes: number;
+    weeklyPlannedMinutes: number;
+    trackedMinutes7d: number;
+    capacityMinutes: number;
+    utilizationPercent: number;
+    actualUtilizationPercent: number;
+    overdueCount: number;
+    unestimatedCount: number;
+  } | null;
   totalMinutesTracked: number;
 };
 
@@ -70,6 +81,23 @@ export default function TeamPage() {
     }
   }
 
+  async function changeCapacity(membershipId: string, hours: number) {
+    if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
+      toast.error("ظرفیت هفتگی باید بین ۱ تا ۱۶۸ ساعت باشد.");
+      return;
+    }
+
+    try {
+      await api.patch(`/api/members/${membershipId}`, {
+        weeklyCapacityMinutes: Math.round(hours * 60),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["team-report"] });
+      toast.success("ظرفیت هفتگی به‌روزرسانی شد.");
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "مشکلی پیش آمد.");
+    }
+  }
+
   async function removeMember(membershipId: string) {
     try {
       await api.delete(`/api/members/${membershipId}`);
@@ -100,41 +128,102 @@ export default function TeamPage() {
       ) : (
         <div className="space-y-3">
           {members.map((m) => (
-            <Card key={m.membershipId} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar name={m.name} color={m.avatarColor} size={42} />
-                <div>
-                  <p className="text-sm font-semibold">{m.name}</p>
-                  <p className="text-xs text-(--color-muted)">{m.email}</p>
+            <Card key={m.membershipId} className="p-4">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div className="flex items-center gap-3">
+                  <Avatar name={m.name} color={m.avatarColor} size={42} />
+                  <div>
+                    <p className="text-sm font-semibold">{m.name}</p>
+                    <p className="text-xs text-(--color-muted)">{m.email}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      <Badge variant="outline">{toPersianDigits(m.counts.total)} وظیفه</Badge>
+                      {m.counts.overdue > 0 && <Badge variant="danger">{toPersianDigits(m.counts.overdue)} عقب‌افتاده</Badge>}
+                      {(m.workload?.unestimatedCount ?? 0) > 0 && (
+                        <Badge variant="warning">{toPersianDigits(m.workload?.unestimatedCount ?? 0)} بدون Estimate</Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {canManage ? (
+                    <label className="flex h-9 items-center gap-1 rounded-xl border border-(--color-border) bg-white px-2 text-[11px] text-(--color-muted)">
+                      ظرفیت
+                      <Input
+                        type="number"
+                        min="1"
+                        max="168"
+                        defaultValue={Math.round((m.workload?.capacityMinutes ?? m.weeklyCapacityMinutes ?? 2400) / 60)}
+                        className="h-7 w-14 border-0 px-1 text-center text-xs"
+                        onBlur={(event) => {
+                          const next = Number(event.currentTarget.value);
+                          const current = Math.round((m.workload?.capacityMinutes ?? m.weeklyCapacityMinutes ?? 2400) / 60);
+                          if (next !== current) changeCapacity(m.membershipId, next);
+                        }}
+                      />
+                      ساعت/هفته
+                    </label>
+                  ) : (
+                    <Badge variant="outline">
+                      ظرفیت {toPersianDigits(Math.round((m.workload?.capacityMinutes ?? 2400) / 60))} ساعت
+                    </Badge>
+                  )}
+
+                  {canManage && m.role !== "owner" ? (
+                    <Select value={m.role} onValueChange={(v) => changeRole(m.membershipId, v as MembershipRole)}>
+                      <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(["admin", "manager", "member", "viewer"] as const).map((r) => (
+                          <SelectItem key={r} value={r}>{ROLE_LABELS_FA[r]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Badge variant="primary">{ROLE_LABELS_FA[m.role]}</Badge>
+                  )}
+
+                  {canRemove && m.role !== "owner" && (
+                    <Button size="icon" variant="ghost" onClick={() => removeMember(m.membershipId)} aria-label="حذف عضو">
+                      <Trash2 className="size-4 text-(--color-danger)" />
+                    </Button>
+                  )}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs text-(--color-muted)">
-                <Badge variant="outline">{toPersianDigits(m.counts.total)} وظیفه</Badge>
-                <Badge variant="outline">{toPersianDigits(m.counts.completed)} تکمیل‌شده</Badge>
-                {m.counts.overdue > 0 && <Badge variant="danger">{toPersianDigits(m.counts.overdue)} عقب‌افتاده</Badge>}
-                {m.workload && <Badge variant={WORKLOAD_VARIANT[m.workload.level]}>بار کاری: {WORKLOAD_LABEL_FA[m.workload.level]}</Badge>}
-              </div>
+              {m.workload && (
+                <div className="mt-4 grid gap-3 border-t border-(--color-border) pt-4 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+                  <div>
+                    <div className="flex items-center justify-between gap-3 text-[11px]">
+                      <span className="font-semibold text-(--color-text)">
+                        برنامه این هفته: {toPersianDigits(Math.round(m.workload.weeklyPlannedMinutes / 60 * 10) / 10)} ساعت
+                      </span>
+                      <Badge variant={WORKLOAD_VARIANT[m.workload.level]}>
+                        {WORKLOAD_LABEL_FA[m.workload.level]} · {toPersianDigits(m.workload.utilizationPercent)}٪
+                      </Badge>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${m.workload.level === "overloaded" ? "bg-(--color-danger)" : m.workload.level === "high" ? "bg-(--color-warning)" : "bg-(--color-primary)"}`}
+                        style={{ width: `${Math.min(100, m.workload.utilizationPercent)}%` }}
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex items-center gap-2">
-                {canManage && m.role !== "owner" ? (
-                  <Select value={m.role} onValueChange={(v) => changeRole(m.membershipId, v as MembershipRole)}>
-                    <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(["admin", "manager", "member", "viewer"] as const).map((r) => (
-                        <SelectItem key={r} value={r}>{ROLE_LABELS_FA[r]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge variant="primary">{ROLE_LABELS_FA[m.role]}</Badge>
-                )}
-                {canRemove && m.role !== "owner" && (
-                  <Button size="icon" variant="ghost" onClick={() => removeMember(m.membershipId)} aria-label="حذف عضو">
-                    <Trash2 className="size-4 text-(--color-danger)" />
-                  </Button>
-                )}
-              </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                    <p className="text-sm font-bold text-(--color-text)">
+                      {toPersianDigits(Math.round(m.workload.trackedMinutes7d / 60 * 10) / 10)} ساعت
+                    </p>
+                    <p className="text-[10px] text-(--color-muted)">ثبت‌شده در ۷ روز اخیر</p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 px-3 py-2 text-center">
+                    <p className="text-sm font-bold text-(--color-text)">
+                      {toPersianDigits(Math.round(m.workload.assignedMinutes / 60 * 10) / 10)} ساعت
+                    </p>
+                    <p className="text-[10px] text-(--color-muted)">کل کار باز</p>
+                  </div>
+                </div>
+              )}
             </Card>
           ))}
         </div>
