@@ -49,6 +49,16 @@ type Run = {
 
 type AutomationResponse = { rules: Rule[]; runs: Run[] };
 
+type ProjectTemplateOption = {
+  id: string;
+  name: string;
+  tasks: { id: string; title: string }[];
+};
+
+type ProjectTemplatesResponse = {
+  templates: ProjectTemplateOption[];
+};
+
 const TRIGGER_LABELS: Record<Trigger, string> = {
   lead_created: "وقتی سرنخ جدید ثبت شد",
   lead_status_changed: "وقتی وضعیت سرنخ تغییر کرد",
@@ -75,6 +85,11 @@ export function AutomationWorkspace() {
   const query = useQuery({
     queryKey: ["automations"],
     queryFn: () => api.get<AutomationResponse>("/api/automations"),
+  });
+
+  const projectTemplates = useQuery({
+    queryKey: ["project-templates"],
+    queryFn: () => api.get<ProjectTemplatesResponse>("/api/project-templates"),
   });
 
   const toggleRule = useMutation({
@@ -184,9 +199,14 @@ export function AutomationWorkspace() {
         )}
       </Card>
 
-      <CreateAutomationDialog open={open} onOpenChange={setOpen} onCreated={async () => {
-        await queryClient.invalidateQueries({ queryKey: ["automations"] });
-      }} />
+      <CreateAutomationDialog
+        open={open}
+        onOpenChange={setOpen}
+        templates={projectTemplates.data?.templates ?? []}
+        onCreated={async () => {
+          await queryClient.invalidateQueries({ queryKey: ["automations"] });
+        }}
+      />
     </div>
   );
 }
@@ -203,10 +223,12 @@ function Metric({ label, value }: { label: string; value: number }) {
 function CreateAutomationDialog({
   open,
   onOpenChange,
+  templates,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  templates: ProjectTemplateOption[];
   onCreated: () => Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -232,6 +254,8 @@ function CreateAutomationDialog({
 
     if (selectedAction === "create_project") {
       actionConfig.priority = String(form.get("projectPriority") || "medium");
+      const templateId = String(form.get("templateId") || "");
+      if (templateId) actionConfig.templateId = templateId;
     }
 
     try {
@@ -287,14 +311,26 @@ function CreateAutomationDialog({
           )}
 
           {action === "create_project" && (
-            <Field label="اولویت پروژه">
-              <NativeSelect name="projectPriority" defaultValue="medium">
-                <option value="critical">بحرانی</option>
-                <option value="high">زیاد</option>
-                <option value="medium">متوسط</option>
-                <option value="low">کم</option>
-              </NativeSelect>
-            </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="قالب پروژه">
+                <NativeSelect name="templateId" defaultValue="">
+                  <option value="">پروژه ساده بدون قالب</option>
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name} · {template.tasks.length.toLocaleString("fa-IR")} کار
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="اولویت پروژه">
+                <NativeSelect name="projectPriority" defaultValue="medium">
+                  <option value="critical">بحرانی</option>
+                  <option value="high">زیاد</option>
+                  <option value="medium">متوسط</option>
+                  <option value="low">کم</option>
+                </NativeSelect>
+              </Field>
+            </div>
           )}
 
           <Field label="توضیح">
