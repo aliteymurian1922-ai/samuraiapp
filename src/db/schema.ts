@@ -92,6 +92,27 @@ export const crmActivityTypeEnum = pgEnum("crm_activity_type", [
   "task",
 ]);
 
+export const automationTriggerEnum = pgEnum("automation_trigger", [
+  "lead_created",
+  "lead_status_changed",
+  "deal_created",
+  "deal_stage_changed",
+  "deal_won",
+  "deal_lost",
+]);
+
+export const automationActionEnum = pgEnum("automation_action", [
+  "create_follow_up",
+  "create_project",
+  "notify_owner",
+]);
+
+export const automationRunStatusEnum = pgEnum("automation_run_status", [
+  "success",
+  "failed",
+  "skipped",
+]);
+
 // ---------------------------------------------------------------------------
 // Users & Auth
 // ---------------------------------------------------------------------------
@@ -316,6 +337,44 @@ export const crmActivities = pgTable("crm_activities", {
   index("crm_activities_deal_idx").on(t.dealId),
   index("crm_activities_lead_idx").on(t.leadId),
   index("crm_activities_contact_idx").on(t.contactId),
+]);
+
+// ---------------------------------------------------------------------------
+// Automations
+// ---------------------------------------------------------------------------
+export const automationRules = pgTable("automation_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  description: text("description"),
+  trigger: automationTriggerEnum("trigger").notNull(),
+  action: automationActionEnum("action").notNull(),
+  conditions: jsonb("conditions").$type<Record<string, unknown>>().notNull().default({}),
+  actionConfig: jsonb("action_config").$type<Record<string, unknown>>().notNull().default({}),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  runCount: integer("run_count").notNull().default(0),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("automation_rules_workspace_idx").on(t.workspaceId),
+  index("automation_rules_trigger_idx").on(t.workspaceId, t.trigger, t.isActive),
+]);
+
+export const automationRuns = pgTable("automation_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  ruleId: uuid("rule_id").notNull().references(() => automationRules.id, { onDelete: "cascade" }),
+  entityType: varchar("entity_type", { length: 40 }).notNull(),
+  entityId: uuid("entity_id"),
+  status: automationRunStatusEnum("status").notNull(),
+  message: varchar("message", { length: 500 }),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("automation_runs_workspace_idx").on(t.workspaceId, t.createdAt),
+  index("automation_runs_rule_idx").on(t.ruleId, t.createdAt),
 ]);
 
 // ---------------------------------------------------------------------------
