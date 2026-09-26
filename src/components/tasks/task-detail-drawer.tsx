@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2, Plus, Play, Square, Check } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
@@ -21,6 +21,21 @@ import { formatJalaliDate, relativeTimeFa } from "@/lib/date";
 const PRIORITY_LABELS: Record<string, string> = { critical: "بحرانی", high: "بالا", medium: "متوسط", low: "پایین" };
 const PRIORITY_VARIANT: Record<string, "danger" | "warning" | "primary" | "default"> = {
   critical: "danger", high: "warning", medium: "primary", low: "default",
+};
+
+type TaskRecurrence = {
+  id: string;
+  frequency: "daily" | "weekly" | "monthly";
+  interval: number;
+  endAt: string | null;
+  occurrencesCreated: number;
+  isActive: boolean;
+};
+
+const RECURRENCE_LABELS: Record<TaskRecurrence["frequency"], string> = {
+  daily: "هر روز",
+  weekly: "هر هفته",
+  monthly: "هر ماه",
 };
 
 export function TaskDetailDrawer() {
@@ -44,13 +59,18 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
   const descTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const task = data?.task;
   const { data: statusesData } = useProjectStatuses(task?.projectId);
-
+  const recurrenceQuery = useQuery({
+    queryKey: ["task-recurrence", taskId],
+    queryFn: () => api.get<{ recurrence: TaskRecurrence | null }>(`/api/tasks/${taskId}/recurrence`),
+  });
+  const recurrence = recurrenceQuery.data?.recurrence ?? null;
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["task", taskId] });
     queryClient.invalidateQueries({ queryKey: ["tasks"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["projects"] });
+    queryClient.invalidateQueries({ queryKey: ["task-recurrence", taskId] });
   }
 
   async function patchTask(payload: Record<string, unknown>) {
@@ -141,6 +161,26 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
       invalidate();
     } catch (error) {
       toast.error(error instanceof ClientApiError ? error.message : "مشکلی پیش آمد.");
+    }
+  }
+
+  async function updateRecurrence(value: string) {
+    try {
+      if (value === "none") {
+        await api.delete(`/api/tasks/${taskId}/recurrence`);
+        toast.success("تکرار وظیفه متوقف شد.");
+      } else {
+        await api.post(`/api/tasks/${taskId}/recurrence`, {
+          frequency: value,
+          interval: 1,
+          endAt: null,
+          isActive: true,
+        });
+        toast.success(`وظیفه روی «${RECURRENCE_LABELS[value as TaskRecurrence["frequency"]]}» تنظیم شد.`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["task-recurrence", taskId] });
+    } catch (error) {
+      toast.error(error instanceof ClientApiError ? error.message : "تنظیم تکرار انجام نشد.");
     }
   }
 

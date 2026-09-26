@@ -155,17 +155,49 @@ export async function createTask(workspaceId: string, creatorId: string, input: 
 
 export async function updateTask(taskId: string, input: UpdateTaskInput) {
   const patch: Partial<typeof tasks.$inferInsert> = { updatedAt: new Date() };
+
+  const taskRows = await db
+    .select({ projectId: tasks.projectId, statusId: tasks.statusId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .limit(1);
+  const currentTask = taskRows[0];
+
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
   if (input.priority !== undefined) patch.priority = input.priority;
   if (input.assigneeId !== undefined) patch.assigneeId = input.assigneeId;
-  if (input.statusId !== undefined) patch.statusId = input.statusId;
   if (input.startDate !== undefined) patch.startDate = input.startDate ? new Date(input.startDate) : null;
   if (input.dueDate !== undefined) patch.dueDate = input.dueDate ? new Date(input.dueDate) : null;
   if (input.estimatedMinutes !== undefined) patch.estimatedMinutes = input.estimatedMinutes;
   if (input.position !== undefined) patch.position = input.position;
 
-  if (input.completed !== undefined) {
+  if (input.statusId !== undefined) {
+    patch.statusId = input.statusId;
+    const statusRows = await db
+      .select({ isDone: taskStatuses.isDone })
+      .from(taskStatuses)
+      .where(eq(taskStatuses.id, input.statusId))
+      .limit(1);
+    if (statusRows[0]) {
+      patch.completedAt = statusRows[0].isDone ? new Date() : null;
+    }
+  }
+
+  if (input.completed !== undefined && currentTask) {
+    const targetRows = await db
+      .select({ id: taskStatuses.id })
+      .from(taskStatuses)
+      .where(
+        and(
+          eq(taskStatuses.projectId, currentTask.projectId),
+          eq(taskStatuses.isDone, input.completed),
+        ),
+      )
+      .orderBy(asc(taskStatuses.order))
+      .limit(1);
+
+    if (targetRows[0]) patch.statusId = targetRows[0].id;
     patch.completedAt = input.completed ? new Date() : null;
   }
 
