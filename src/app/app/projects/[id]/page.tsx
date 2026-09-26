@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { KanbanBoard } from "@/components/tasks/kanban-board";
+import { ProjectTimeline } from "@/components/projects/project-timeline";
 import { formatJalaliDate, relativeTimeFa } from "@/lib/date";
 import { RISK_LEVEL_LABEL_FA } from "@/lib/risk";
 import { toPersianDigits } from "@/lib/utils";
@@ -122,6 +123,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <TabsList>
           <TabsTrigger value="board">تخته کانبان</TabsTrigger>
           <TabsTrigger value="list">لیست وظایف</TabsTrigger>
+          <TabsTrigger value="timeline">خط زمان</TabsTrigger>
           <TabsTrigger value="overview">نمای کلی</TabsTrigger>
         </TabsList>
 
@@ -145,6 +147,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </button>
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          {tasksLoading ? (
+            <Skeleton className="h-96" />
+          ) : (
+            <ProjectTimeline tasks={tasks} onTaskClick={setActiveTaskId} />
           )}
         </TabsContent>
 
