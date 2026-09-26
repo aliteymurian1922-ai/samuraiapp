@@ -259,6 +259,7 @@ export const crmDeals = pgTable("crm_deals", {
   wonAt: timestamp("won_at", { withTimezone: true }),
   lostAt: timestamp("lost_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  projectId: uuid("project_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -267,6 +268,7 @@ export const crmDeals = pgTable("crm_deals", {
   index("crm_deals_owner_idx").on(t.ownerId),
   index("crm_deals_company_idx").on(t.companyId),
   index("crm_deals_contact_idx").on(t.contactId),
+  index("crm_deals_project_idx").on(t.projectId),
 ]);
 
 export const crmProducts = pgTable("crm_products", {
@@ -657,6 +659,7 @@ export const crmDealsRelations = relations(crmDeals, ({ one, many }) => ({
   company: one(crmCompanies, { fields: [crmDeals.companyId], references: [crmCompanies.id] }),
   contact: one(crmContacts, { fields: [crmDeals.contactId], references: [crmContacts.id] }),
   owner: one(users, { fields: [crmDeals.ownerId], references: [users.id] }),
+  project: one(projects, { fields: [crmDeals.projectId], references: [projects.id] }),
   activities: many(crmActivities),
   products: many(crmDealProducts),
 }));
