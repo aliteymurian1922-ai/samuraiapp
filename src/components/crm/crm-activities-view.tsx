@@ -68,7 +68,7 @@ export function CrmActivitiesView() {
   });
 
   const rows = useMemo(() => {
-    const now = Date.now();
+    const now = new Date().getTime();
     return (query.data?.activities ?? []).filter((item) => {
       if (filter === "done") return Boolean(item.completedAt);
       if (item.completedAt) return false;
@@ -104,7 +104,7 @@ export function CrmActivitiesView() {
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {rows.map((item) => {
-            const overdue = Boolean(!item.completedAt && item.dueAt && new Date(item.dueAt).getTime() < Date.now());
+            const overdue = Boolean(!item.completedAt && item.dueAt && new Date(item.dueAt).getTime() < new Date().getTime());
             return (
               <Card key={item.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
