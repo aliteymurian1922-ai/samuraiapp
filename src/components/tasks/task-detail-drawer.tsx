@@ -195,6 +195,7 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
   }
 
   const checklistDone = task.checklist.filter((c) => c.isDone).length;
+  const unresolvedBlockers = task.dependencies.filter((dependency) => dependency.type === "blocked_by" && !dependency.isDone);
   const members = membersData?.members ?? [];
   const statuses = statusesData?.statuses ?? [];
 
@@ -204,6 +205,9 @@ function TaskDetailBody({ taskId }: { taskId: string }) {
         <div className="flex items-center gap-2">
           <Checkbox checked={task.statusIsDone} onCheckedChange={toggleDone} />
           <Badge variant={PRIORITY_VARIANT[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
+          {unresolvedBlockers.length > 0 && (
+            <Badge variant="danger">مسدود · {unresolvedBlockers.length.toLocaleString("fa-IR")}</Badge>
+          )}
           <span className="text-xs text-(--color-muted)">{task.projectName}</span>
         </div>
         <div className="flex items-center gap-1">
