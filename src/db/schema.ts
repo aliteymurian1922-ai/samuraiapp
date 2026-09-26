@@ -586,6 +586,28 @@ export const timeEntries = pgTable("time_entries", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Task Reminder Delivery
+// ---------------------------------------------------------------------------
+export const taskReminderEvents = pgTable("task_reminder_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  reminderType: varchar("reminder_type", { length: 30 }).notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("task_reminder_events_unique_idx").on(
+    t.workspaceId,
+    t.userId,
+    t.taskId,
+    t.reminderType,
+    t.dueAt,
+  ),
+  index("task_reminder_events_user_idx").on(t.workspaceId, t.userId, t.notifiedAt),
+]);
+
+// ---------------------------------------------------------------------------
 // Meetings
 // ---------------------------------------------------------------------------
 export const meetings = pgTable("meetings", {
