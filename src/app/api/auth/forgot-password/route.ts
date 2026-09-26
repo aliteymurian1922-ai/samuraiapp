@@ -5,16 +5,33 @@ import { users, passwordResetTokens } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { forgotPasswordSchema } from "@/lib/validation/auth";
 import { ok, handleApiError } from "@/lib/api-response";
+import { enforceRateLimit, getRequestIp } from "@/lib/security/rate-limit";
 
-// NOTE: No transactional-email provider is configured for this project yet.
-// To avoid a "fake" integration, we return the reset link directly in the
-// API response (dev/demo behavior) instead of pretending an email was sent.
-// Wiring a real provider (Resend/SendGrid) later only requires sending the
-// same link inside sendResetEmail().
+// A transactional-email provider is not configured yet.
+// Development may expose the reset URL; production deliberately never does.
 export async function POST(req: NextRequest) {
   try {
+    const ip = getRequestIp(req);
+    if (ip) {
+      await enforceRateLimit({
+        scope: "auth.forgot.ip",
+        identifier: ip,
+        maxAttempts: 10,
+        windowMs: 60 * 60 * 1000,
+        blockMs: 60 * 60 * 1000,
+      });
+    }
+
     const body = await req.json();
     const input = forgotPasswordSchema.parse(body);
+
+    await enforceRateLimit({
+      scope: "auth.forgot.email",
+      identifier: input.email,
+      maxAttempts: 4,
+      windowMs: 60 * 60 * 1000,
+      blockMs: 60 * 60 * 1000,
+    });
 
     const rows = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
     const user = rows[0];
