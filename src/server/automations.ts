@@ -11,14 +11,13 @@ import {
 } from "@/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type {
+  AutomationTrigger,
   CreateAutomationRuleInput,
   UpdateAutomationRuleInput,
-  automationTriggerValues,
 } from "@/lib/validation/automations";
 import { NotFoundError } from "@/lib/api-response";
 import { createProject } from "@/server/projects";
 
-export type AutomationTrigger = (typeof automationTriggerValues)[number];
 type EntityType = "crm_lead" | "crm_deal";
 
 type AutomationContext = {
