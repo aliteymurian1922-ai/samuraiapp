@@ -4,15 +4,39 @@ import { assertCan } from "@/lib/permissions";
 import { ok, handleApiError } from "@/lib/api-response";
 import { updateDealSchema } from "@/lib/validation/crm";
 import { updateDeal } from "@/server/crm";
+import { runAutomationEvent } from "@/server/automations";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { workspace, role } = await requireWorkspaceContext();
+    const { workspace, role, user } = await requireWorkspaceContext();
     assertCan(role, "crm.update");
 
     const input = updateDealSchema.parse(await req.json());
     const deal = await updateDeal(workspace.id, id, input);
+
+    if (input.stageId) {
+      await runAutomationEvent({
+        workspaceId: workspace.id,
+        userId: user.id,
+        triggerType: "deal_stage_changed",
+        entityType: "crm_deal",
+        entityId: deal.id,
+        payload: { stageId: deal.stageId, status: deal.status },
+      });
+
+      if (deal.status === "won") {
+        await runAutomationEvent({
+          workspaceId: workspace.id,
+          userId: user.id,
+          triggerType: "deal_won",
+          entityType: "crm_deal",
+          entityId: deal.id,
+          payload: { stageId: deal.stageId, status: deal.status },
+        });
+      }
+    }
+
     return ok({ deal });
   } catch (error) {
     return handleApiError(error);
