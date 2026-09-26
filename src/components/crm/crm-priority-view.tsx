@@ -117,7 +117,7 @@ export function CrmPriorityView() {
                   <Badge className={priorityClass[item.priorityBand]}>
                     {priorityLabel[item.priorityBand]}
                   </Badge>
-                  <Badge variant="secondary">{item.kind === "lead" ? "سرنخ" : "فرصت فروش"}</Badge>
+                  <Badge variant="default">{item.kind === "lead" ? "سرنخ" : "فرصت فروش"}</Badge>
                 </div>
 
                 <p className="mt-1 text-[11px] text-(--color-muted)">{item.subtitle}</p>
