@@ -6,7 +6,7 @@ import {
   getWorkspaceWorkload,
   getCompletedTasksTrend,
 } from "@/server/analytics";
-import { getOverdueTasks, listTasks } from "@/server/tasks";
+import { getBlockedTasks, getOverdueTasks, listTasks } from "@/server/tasks";
 import { listActivity } from "@/server/activity";
 import { getUpcomingMeetings } from "@/server/meetings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,8 @@ import { formatJalaliDate, relativeTimeFa } from "@/lib/date";
 import { toPersianDigits } from "@/lib/utils";
 import { RISK_LEVEL_LABEL_FA } from "@/lib/risk";
 import { WORKLOAD_LABEL_FA } from "@/lib/workload";
+import { buildDashboardActionCenter } from "@/lib/dashboard-actions";
+import { syncTaskRemindersForUser } from "@/server/task-reminders";
 import {
   FolderKanban, ListChecks, Users, HeartPulse, AlertTriangle, Video, Sparkles, ArrowLeft, Clock,
 } from "lucide-react";
@@ -28,7 +30,9 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const { user, workspace } = await requireWorkspaceContext();
 
-  const [snapshot, health, workload, trend, overdue, myTasks, activity, meetings] = await Promise.all([
+  await syncTaskRemindersForUser(workspace.id, user.id);
+
+  const [snapshot, health, workload, trend, overdue, myTasks, activity, meetings, blockedTasks] = await Promise.all([
     getDashboardSnapshot(workspace.id),
     getProjectHealthOverview(workspace.id),
     getWorkspaceWorkload(workspace.id),
@@ -37,6 +41,7 @@ export default async function DashboardPage() {
     listTasks(workspace.id, { assigneeId: user.id }),
     listActivity(workspace.id, { limit: 8 }),
     getUpcomingMeetings(workspace.id, 3),
+    getBlockedTasks(workspace.id, 6),
   ]);
 
   const myOpenTasks = myTasks.filter((t) => !t.statusIsDone);
@@ -44,6 +49,12 @@ export default async function DashboardPage() {
   const criticalProjects = health.filter((h) => h.health.level === "critical");
   const atRiskProjects = health.filter((h) => h.health.level === "at_risk");
   const overloaded = workload.filter((w) => w.level === "overloaded");
+  const actionCenter = buildDashboardActionCenter({
+    myOpenTasks,
+    blockedTasks,
+    health,
+    workload,
+  });
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "صبح بخیر" : hour < 18 ? "ظهر بخیر" : "عصر بخیر";
 
@@ -81,6 +92,52 @@ export default async function DashboardPage() {
         <KpiCard icon={Users} label="اعضای تیم" value={snapshot.members} sub={overloaded.length > 0 ? `${toPersianDigits(overloaded.length)} بیش از ظرفیت` : "متعادل"} color="#0891b2" />
         <KpiCard icon={HeartPulse} label="وظایف عقب‌افتاده" value={snapshot.tasks.overdue} sub={snapshot.tasks.overdue > 0 ? "نیاز به بررسی" : "وضعیت خوب"} color={snapshot.tasks.overdue > 0 ? "#dc2626" : "#16a34a"} />
       </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-(--color-border)">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>مرکز اقدام</CardTitle>
+              <p className="mt-1 text-xs text-(--color-muted)">مواردی که الان بیشترین نیاز به تصمیم یا پیگیری دارند.</p>
+            </div>
+            <Badge variant={actionCenter.some((item) => item.severity === "critical") ? "danger" : actionCenter.length > 0 ? "warning" : "success"}>
+              {actionCenter.length === 0 ? "بدون اقدام فوری" : `${toPersianDigits(actionCenter.length)} مورد`}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {actionCenter.length === 0 ? (
+            <div className="p-5">
+              <EmptyState title="صف اقدام خالی است" description="در حال حاضر مورد فوری یا مسدودکننده‌ای برای پیگیری دیده نمی‌شود." />
+            </div>
+          ) : (
+            <div className="divide-y divide-(--color-border)">
+              {actionCenter.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                >
+                  <span
+                    className={`size-2.5 shrink-0 rounded-full ${
+                      item.severity === "critical"
+                        ? "bg-(--color-danger)"
+                        : item.severity === "warning"
+                          ? "bg-(--color-warning)"
+                          : "bg-(--color-primary)"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold text-(--color-text)">{item.title}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-(--color-muted)">{item.detail}</p>
+                  </div>
+                  <span className="shrink-0 text-xs font-medium text-(--color-primary)">بررسی</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Project health */}
