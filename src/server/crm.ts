@@ -26,6 +26,7 @@ import type {
 } from "@/lib/validation/crm";
 import { ApiError, NotFoundError } from "@/lib/api-response";
 import { createProject } from "@/server/projects";
+import { calculateLeadScore } from "@/lib/crm/lead-scoring";
 
 const DEFAULT_STAGES = [
   { name: "سرنخ جدید", color: "#94a3b8", probability: 10, position: 0 },
@@ -174,26 +175,96 @@ export async function getCrmOverview(workspaceId: string) {
 }
 
 export async function listLeads(workspaceId: string) {
-  return db
-    .select({
-      id: crmLeads.id,
-      name: crmLeads.name,
-      companyName: crmLeads.companyName,
-      phone: crmLeads.phone,
-      email: crmLeads.email,
-      source: crmLeads.source,
-      status: crmLeads.status,
-      estimatedValue: crmLeads.estimatedValue,
-      ownerId: crmLeads.ownerId,
-      ownerName: users.name,
-      notes: crmLeads.notes,
-      convertedAt: crmLeads.convertedAt,
-      createdAt: crmLeads.createdAt,
-    })
-    .from(crmLeads)
-    .leftJoin(users, eq(users.id, crmLeads.ownerId))
-    .where(eq(crmLeads.workspaceId, workspaceId))
-    .orderBy(desc(crmLeads.createdAt));
+  const [leads, activityRows] = await Promise.all([
+    db
+      .select({
+        id: crmLeads.id,
+        name: crmLeads.name,
+        companyName: crmLeads.companyName,
+        phone: crmLeads.phone,
+        email: crmLeads.email,
+        source: crmLeads.source,
+        status: crmLeads.status,
+        estimatedValue: crmLeads.estimatedValue,
+        ownerId: crmLeads.ownerId,
+        ownerName: users.name,
+        notes: crmLeads.notes,
+        convertedAt: crmLeads.convertedAt,
+        createdAt: crmLeads.createdAt,
+        updatedAt: crmLeads.updatedAt,
+      })
+      .from(crmLeads)
+      .leftJoin(users, eq(users.id, crmLeads.ownerId))
+      .where(eq(crmLeads.workspaceId, workspaceId))
+      .orderBy(desc(crmLeads.createdAt)),
+    db
+      .select({
+        leadId: crmActivities.leadId,
+        totalActivities: sql<number>`count(*)::int`,
+        completedActivities: sql<number>`
+          count(*) filter (where ${crmActivities.completedAt} is not null)::int
+        `,
+        overdueFollowUps: sql<number>`
+          count(*) filter (
+            where ${crmActivities.completedAt} is null
+              and ${crmActivities.dueAt} is not null
+              and ${crmActivities.dueAt} < now()
+          )::int
+        `,
+        nextFollowUpAt: sql<Date | null>`
+          min(${crmActivities.dueAt}) filter (
+            where ${crmActivities.completedAt} is null
+              and ${crmActivities.dueAt} >= now()
+          )
+        `,
+        lastActivityAt: sql<Date | null>`max(${crmActivities.createdAt})`,
+      })
+      .from(crmActivities)
+      .where(eq(crmActivities.workspaceId, workspaceId))
+      .groupBy(crmActivities.leadId),
+  ]);
+
+  const activityMap = new Map(
+    activityRows
+      .filter((row) => row.leadId)
+      .map((row) => [row.leadId!, row]),
+  );
+
+  const maxEstimatedValue = leads.reduce(
+    (maxValue, lead) => Math.max(maxValue, Number(lead.estimatedValue ?? 0)),
+    0,
+  );
+
+  return leads.map((lead) => {
+    const activity = activityMap.get(lead.id);
+
+    const scoring = calculateLeadScore({
+      status: lead.status,
+      estimatedValue: lead.estimatedValue,
+      maxEstimatedValue,
+      phone: lead.phone,
+      email: lead.email,
+      companyName: lead.companyName,
+      source: lead.source,
+      ownerId: lead.ownerId,
+      notes: lead.notes,
+      createdAt: lead.createdAt,
+      updatedAt: lead.updatedAt,
+      totalActivities: activity?.totalActivities ?? 0,
+      completedActivities: activity?.completedActivities ?? 0,
+      overdueFollowUps: activity?.overdueFollowUps ?? 0,
+      nextFollowUpAt: activity?.nextFollowUpAt ?? null,
+      lastActivityAt: activity?.lastActivityAt ?? null,
+    });
+
+    return {
+      ...lead,
+      ...scoring,
+      nextFollowUpAt: activity?.nextFollowUpAt ?? null,
+      overdueFollowUps: activity?.overdueFollowUps ?? 0,
+      lastActivityAt: activity?.lastActivityAt ?? null,
+    };
+  });
 }
 
 export async function createLead(workspaceId: string, userId: string, input: CreateLeadInput) {
