@@ -6,12 +6,32 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { resetPasswordSchema } from "@/lib/validation/auth";
 import { hashPassword } from "@/lib/auth/password";
 import { ok, handleApiError, ApiError } from "@/lib/api-response";
+import { enforceRateLimit, getRequestIp } from "@/lib/security/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getRequestIp(req);
+    if (ip) {
+      await enforceRateLimit({
+        scope: "auth.reset.ip",
+        identifier: ip,
+        maxAttempts: 10,
+        windowMs: 60 * 60 * 1000,
+        blockMs: 60 * 60 * 1000,
+      });
+    }
+
     const body = await req.json();
     const input = resetPasswordSchema.parse(body);
     const tokenHash = createHash("sha256").update(input.token).digest("hex");
+
+    await enforceRateLimit({
+      scope: "auth.reset.token",
+      identifier: tokenHash,
+      maxAttempts: 5,
+      windowMs: 60 * 60 * 1000,
+      blockMs: 60 * 60 * 1000,
+    });
 
     const rows = await db
       .select()

@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  pgSchema,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -90,6 +91,19 @@ export const crmActivityTypeEnum = pgEnum("crm_activity_type", [
   "meeting",
   "note",
   "task",
+]);
+
+export const privateSchema = pgSchema("private");
+
+export const rateLimits = privateSchema.table("rate_limits", {
+  keyHash: varchar("key_hash", { length: 64 }).primaryKey(),
+  scope: varchar("scope", { length: 80 }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
+  blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("rate_limits_scope_updated_idx").on(t.scope, t.updatedAt),
 ]);
 
 // ---------------------------------------------------------------------------
