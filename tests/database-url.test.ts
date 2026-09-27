@@ -11,6 +11,7 @@ describe("normalizeDatabaseUrl", () => {
 
     expect(result.username).toBe("postgres.hyqmntpbnxkbnsqbcelj");
     expect(result.searchParams.get("sslmode")).toBe("require");
+    expect(result.searchParams.get("uselibpqcompat")).toBe("true");
   });
 
   it("does not modify an already tenant-qualified pooler username", () => {
