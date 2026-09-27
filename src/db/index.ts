@@ -10,6 +10,18 @@ const globalForDb = globalThis as typeof globalThis & {
 let localPool: Pool | undefined;
 let localDb: ReturnType<typeof drizzle> | undefined;
 
+export function getConfiguredDatabaseUrl() {
+  if (process.env.POSTGRES_URL) {
+    return { source: "POSTGRES_URL" as const, value: process.env.POSTGRES_URL };
+  }
+
+  if (process.env.DATABASE_URL) {
+    return { source: "DATABASE_URL" as const, value: process.env.DATABASE_URL };
+  }
+
+  return { source: null, value: null };
+}
+
 export function normalizeDatabaseUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
   const isSharedSupabasePooler =
@@ -40,13 +52,9 @@ export function normalizeDatabaseUrl(databaseUrl: string) {
 }
 
 export function getDatabaseConnectionMeta() {
-  const source = process.env.DATABASE_URL
-    ? "DATABASE_URL"
-    : process.env.POSTGRES_URL
-      ? "POSTGRES_URL"
-      : null;
-
-  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  const configured = getConfiguredDatabaseUrl();
+  const source = configured.source;
+  const raw = configured.value;
   if (!raw) {
     return {
       source,
@@ -86,13 +94,13 @@ function getPool() {
 
   if (localPool) return localPool;
 
-  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL or POSTGRES_URL is required at runtime");
+  const configured = getConfiguredDatabaseUrl();
+  if (!configured.value) {
+    throw new Error("POSTGRES_URL or DATABASE_URL is required at runtime");
   }
 
   localPool = new Pool({
-    connectionString: normalizeDatabaseUrl(databaseUrl),
+    connectionString: normalizeDatabaseUrl(configured.value),
     max: 5,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
