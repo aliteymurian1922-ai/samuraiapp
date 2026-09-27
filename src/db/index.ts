@@ -23,8 +23,17 @@ export function normalizeDatabaseUrl(databaseUrl: string) {
     url.username = `postgres.${projectRef}`;
   }
 
-  if (isSharedSupabasePooler && !url.searchParams.has("sslmode")) {
-    url.searchParams.set("sslmode", "require");
+  if (isSharedSupabasePooler) {
+    if (!url.searchParams.has("sslmode")) {
+      url.searchParams.set("sslmode", "require");
+    }
+
+    if (
+      url.searchParams.get("sslmode") === "require" &&
+      !url.searchParams.has("uselibpqcompat")
+    ) {
+      url.searchParams.set("uselibpqcompat", "true");
+    }
   }
 
   return url.toString();
