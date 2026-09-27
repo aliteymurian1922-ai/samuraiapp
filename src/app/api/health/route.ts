@@ -1,31 +1,6 @@
-import { pool } from "@/db";
+import { getDatabaseConnectionMeta, pool } from "@/db";
 
 export const dynamic = "force-dynamic";
-
-function getConnectionMeta() {
-  const source = process.env.DATABASE_URL
-    ? "DATABASE_URL"
-    : process.env.POSTGRES_URL
-      ? "POSTGRES_URL"
-      : null;
-
-  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-  if (!raw) {
-    return { source, host: null, port: null, sslMode: null };
-  }
-
-  try {
-    const url = new URL(raw);
-    return {
-      source,
-      host: url.hostname,
-      port: url.port || "5432",
-      sslMode: url.searchParams.get("sslmode"),
-    };
-  } catch {
-    return { source, host: "invalid-url", port: null, sslMode: null };
-  }
-}
 
 function errorDetails(error: unknown) {
   if (!(error instanceof Error)) {
@@ -76,7 +51,7 @@ export async function GET() {
     });
   } catch (error) {
     const details = errorDetails(error);
-    const connection = getConnectionMeta();
+    const connection = getDatabaseConnectionMeta();
 
     console.error("[health] database check failed", {
       ...details,
