@@ -13,6 +13,7 @@ import { NotFoundError } from "@/lib/api-response";
 import { getCrmCustomFieldValues } from "@/server/crm-custom-fields";
 import { calculateLeadScore } from "@/lib/crm/lead-scoring";
 import { sql } from "drizzle-orm";
+import { summarizeLeadActivities } from "@/lib/crm/lead-activity-summary";
 
 export async function getLead360(workspaceId: string, leadId: string) {
   const leadRows = await db
@@ -87,10 +88,8 @@ export async function getLead360(workspaceId: string, leadId: string) {
       .where(eq(crmLeads.workspaceId, workspaceId)),
   ]);
 
-  const openActivities = activities.filter((activity) => !activity.completedAt);
-  const nextFollowUp = openActivities
-    .filter((activity) => activity.dueAt)
-    .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime())[0] ?? null;
+  const now = new Date();
+  const activitySummary = summarizeLeadActivities(activities, now);
 
   const conversionActivity = activities.find(
     (activity) => Boolean(activity.dealId || activity.contactId),
@@ -108,13 +107,8 @@ export async function getLead360(workspaceId: string, leadId: string) {
     notes: lead.notes,
     createdAt: lead.createdAt,
     updatedAt: lead.updatedAt,
-    totalActivities: activities.length,
-    completedActivities: activities.filter((activity) => activity.completedAt).length,
-    overdueFollowUps: openActivities.filter(
-      (activity) => activity.dueAt && new Date(activity.dueAt).getTime() < Date.now(),
-    ).length,
-    nextFollowUpAt: nextFollowUp?.dueAt ?? null,
-    lastActivityAt: activities[0]?.createdAt ?? null,
+    ...activitySummary,
+    now,
   });
 
   return {
@@ -131,10 +125,10 @@ export async function getLead360(workspaceId: string, leadId: string) {
         }
       : null,
     metrics: {
-      openFollowUps: openActivities.length,
-      completedActivities: activities.filter((activity) => activity.completedAt).length,
-      nextFollowUpAt: nextFollowUp?.dueAt ?? null,
-      lastInteractionAt: activities[0]?.createdAt ?? lead.updatedAt,
+      openFollowUps: activitySummary.openFollowUps,
+      completedActivities: activitySummary.completedActivities,
+      nextFollowUpAt: activitySummary.nextFollowUpAt,
+      lastInteractionAt: activitySummary.lastActivityAt ?? lead.updatedAt,
     },
   };
 }
