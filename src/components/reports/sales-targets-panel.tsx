@@ -11,6 +11,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SalesForecastReport } from "@/server/sales-forecast";
+import { evaluateSalesGoalStatus } from "@/lib/crm/sales-goal-status";
+import { ROLE_LABELS_FA, type MembershipRole } from "@/lib/permissions";
 
 type TargetsResponse = {
   targets: {
@@ -19,7 +21,7 @@ type TargetsResponse = {
     members: {
       userId: string;
       name: string;
-      role: string;
+      role: MembershipRole;
       targetValue: number;
     }[];
   };
@@ -51,6 +53,11 @@ export function SalesTargetsPanel({ report }: { report: SalesForecastReport }) {
   const forecastAttained = Number(report.summary.forecastAttainmentPercent ?? 0);
   const gap = Number(report.summary.gapToTarget ?? 0);
   const forecastGap = Number(report.summary.forecastGapToTarget ?? 0);
+  const goalStatus = evaluateSalesGoalStatus({
+    targetValue: target,
+    wonValue: Number(report.summary.wonThisMonth),
+    forecastValue: Number(report.summary.forecastThisMonth),
+  });
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,6 +131,46 @@ export function SalesTargetsPanel({ report }: { report: SalesForecastReport }) {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
+            {goalStatus.status !== "on_track" && goalStatus.status !== "unset" && (
+              <div
+                className={`rounded-2xl border p-3 ${
+                  goalStatus.status === "achieved"
+                    ? "border-emerald-200 bg-emerald-50"
+                    : goalStatus.status === "forecast_risk"
+                      ? "border-red-200 bg-red-50"
+                      : "border-amber-200 bg-amber-50"
+                }`}
+              >
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div>
+                    <p
+                      className={`text-xs font-bold ${
+                        goalStatus.status === "achieved"
+                          ? "text-emerald-800"
+                          : goalStatus.status === "forecast_risk"
+                            ? "text-red-800"
+                            : "text-amber-800"
+                      }`}
+                    >
+                      {goalStatus.status === "achieved"
+                        ? "هدف فروش محقق شده"
+                        : goalStatus.status === "forecast_risk"
+                          ? "هشدار Forecast فروش"
+                          : "فروش از pace ماه عقب است"}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-(--color-muted)">
+                      {goalStatus.message}
+                    </p>
+                  </div>
+                  {goalStatus.status !== "achieved" && (
+                    <Badge variant={goalStatus.status === "forecast_risk" ? "danger" : "warning"}>
+                      هشدار هفتگی فعال
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-3">
               <TargetMetric label="هدف تیم" value={target} />
               <TargetMetric label="فروش قطعی" value={Number(report.summary.wonThisMonth)} />
@@ -234,7 +281,7 @@ export function SalesTargetsPanel({ report }: { report: SalesForecastReport }) {
                     >
                       <div>
                         <p className="text-xs font-semibold text-(--color-text)">{member.name}</p>
-                        <p className="mt-0.5 text-[10px] text-(--color-muted)">{member.role}</p>
+                        <p className="mt-0.5 text-[10px] text-(--color-muted)">{ROLE_LABELS_FA[member.role]}</p>
                       </div>
                       <Input
                         name={`member:${member.userId}`}

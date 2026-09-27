@@ -272,6 +272,26 @@ export const crmSalesTargets = pgTable("crm_sales_targets", {
   index("crm_sales_targets_user_idx").on(t.userId, t.periodStart),
 ]);
 
+export const crmSalesGoalAlertEvents = pgTable("crm_sales_goal_alert_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+  weekStart: timestamp("week_start", { withTimezone: true }).notNull(),
+  alertType: varchar("alert_type", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("crm_sales_goal_alert_events_unique_idx").on(
+    t.workspaceId,
+    t.userId,
+    t.periodStart,
+    t.weekStart,
+    t.alertType,
+  ),
+  index("crm_sales_goal_alert_events_user_idx").on(t.workspaceId, t.userId, t.createdAt),
+  index("crm_sales_goal_alert_events_user_fk_idx").on(t.userId),
+]);
+
 export const crmDeals = pgTable("crm_deals", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
